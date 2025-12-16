@@ -18,11 +18,12 @@ type Game = {
   format: string;
 
   releaseDate: string;
-  dateAdded: string;      // ✅ NEW
   backlog: string;
   completed: string;
   dateCompleted: string;
 };
+
+type ViewMode = "games" | "backlogQueue" | "wishlist";
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -48,6 +49,16 @@ function splitTags(s: string) {
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
+}
+
+function pickCover(row: Row) {
+  const coverUrl = norm(row["CoverURL"]);
+  if (coverUrl) return coverUrl;
+
+  const cover = norm(row["Cover"]);
+  if (cover.startsWith("http")) return cover;
+
+  return "";
 }
 
 function toBool(v: string) {
@@ -79,52 +90,6 @@ function titleKey(title: string) {
   return norm(title).toLowerCase();
 }
 
-/**
- * ✅ Normalize Google Drive links so they reliably load in <img>.
- * Supports:
- * - https://drive.google.com/uc?id=FILE
- * - https://drive.google.com/uc?export=view&id=FILE
- * - https://drive.google.com/file/d/FILE/view?...
- */
-function normalizeDriveImageUrl(url: string) {
-  const u = norm(url);
-  if (!u) return "";
-
-  // If it's already a uc export url, keep as-is
-  if (u.includes("drive.google.com/uc?") && u.includes("id=") && u.includes("export=")) {
-    return u;
-  }
-
-  // uc?id=FILE_ID
-  const ucIdMatch = u.match(/drive\.google\.com\/uc\?[^#]*\bid=([^&]+)/i);
-  if (ucIdMatch?.[1]) {
-    return `https://drive.google.com/uc?export=view&id=${ucIdMatch[1]}`;
-  }
-
-  // file/d/FILE_ID/...
-  const fileDMatch = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
-  if (fileDMatch?.[1]) {
-    return `https://drive.google.com/uc?export=view&id=${fileDMatch[1]}`;
-  }
-
-  return u;
-}
-
-function pickCover(row: Row) {
-  // ✅ Prefer LocalCoverURL if present
-  const local = norm(row["LocalCoverURL"]);
-  if (local) return normalizeDriveImageUrl(local);
-
-  // fallback to CoverURL (IGDB or whatever)
-  const coverUrl = norm(row["CoverURL"]);
-  if (coverUrl) return normalizeDriveImageUrl(coverUrl);
-
-  const cover = norm(row["Cover"]);
-  if (cover.startsWith("http")) return normalizeDriveImageUrl(cover);
-
-  return "";
-}
-
 function rowToGame(row: Row): Game | null {
   const title = norm(row["Title"]);
   if (!title) return null;
@@ -142,14 +107,13 @@ function rowToGame(row: Row): Game | null {
     format: norm(row["Format"]),
 
     releaseDate: norm(row["ReleaseDate"]),
-    dateAdded: norm(row["DateAdded"]), // ✅ NEW
     backlog: norm(row["Backlog"]),
     completed: norm(row["Completed"]),
     dateCompleted: norm(row["DateCompleted"]),
   };
 }
 
-// ✅ merge duplicate rows (same Title) into one game
+// ✅ Merge duplicate Title rows into one game (keeps platform/genre/yearPlayed as unions)
 function dedupeByTitle(rows: Game[]) {
   const map = new Map<string, Game>();
 
@@ -162,15 +126,12 @@ function dedupeByTitle(rows: Game[]) {
       continue;
     }
 
-    // cover: prefer one that exists
     const coverUrl = existing.coverUrl || g.coverUrl;
 
-    // union tag arrays
     const platforms = uniqueSorted([...existing.platforms, ...g.platforms]);
     const genres = uniqueSorted([...existing.genres, ...g.genres]);
     const yearPlayed = uniqueSorted([...existing.yearPlayed, ...g.yearPlayed]);
 
-    // booleans: if any true, keep true
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
     const completed =
       toBool(existing.completed) || toBool(g.completed) ? "true" : "";
@@ -180,23 +141,19 @@ function dedupeByTitle(rows: Game[]) {
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
     if (!aRel && bRel) releaseDate = g.releaseDate;
-    else if (aRel && bRel) releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
-
-    // dateAdded: keep earliest non-empty (first time you added it)
-    const aAdd = toDateNum(existing.dateAdded);
-    const bAdd = toDateNum(g.dateAdded);
-    let dateAdded = existing.dateAdded;
-    if (!aAdd && bAdd) dateAdded = g.dateAdded;
-    else if (aAdd && bAdd) dateAdded = aAdd <= bAdd ? existing.dateAdded : g.dateAdded;
+    else if (aRel && bRel)
+      releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
     // dateCompleted: keep latest non-empty
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
     if (!aComp && bComp) dateCompleted = g.dateCompleted;
-    else if (aComp && bComp) dateCompleted = aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
+    else if (aComp && bComp)
+      dateCompleted =
+        aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
 
-    // other single fields: prefer existing non-empty, otherwise take incoming
+    // keep a non-empty status/ownership/format
     const status = existing.status || g.status;
     const ownership = existing.ownership || g.ownership;
     const format = existing.format || g.format;
@@ -210,7 +167,6 @@ function dedupeByTitle(rows: Game[]) {
       backlog,
       completed,
       releaseDate,
-      dateAdded,
       dateCompleted,
       status,
       ownership,
@@ -221,9 +177,6 @@ function dedupeByTitle(rows: Game[]) {
   return Array.from(map.values());
 }
 
-/**
- * Base list for counts (respects all filters except the facet you’re counting).
- */
 function buildBaseForFacet(args: {
   games: Game[];
   q: string;
@@ -235,8 +188,7 @@ function buildBaseForFacet(args: {
   selectedYearsPlayed: string[];
   onlyBacklog: boolean;
   onlyCompleted: boolean;
-  onlyNowPlaying: boolean;  // ✅ NEW
-  onlyAbandoned: boolean;   // ✅ NEW
+  viewMode: ViewMode;
   exclude:
     | "platforms"
     | "status"
@@ -256,28 +208,33 @@ function buildBaseForFacet(args: {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
+    viewMode,
     exclude,
   } = args;
 
   const query = q.trim().toLowerCase();
 
   return games.filter((g) => {
+    // ✅ top tabs filter
+    if (viewMode === "backlogQueue" && g.status !== "Queued") return false;
+    if (viewMode === "wishlist" && g.ownership !== "Wishlist") return false;
+
     if (query && !g.title.toLowerCase().includes(query)) return false;
 
     if (onlyBacklog && !toBool(g.backlog)) return false;
     if (onlyCompleted && !toBool(g.completed)) return false;
 
-    // ✅ NEW status checkboxes
-    if (onlyNowPlaying && g.status !== "Now Playing") return false;
-    if (onlyAbandoned && g.status !== "Abandoned") return false;
+    if (exclude !== "status" && selectedStatus && g.status !== selectedStatus)
+      return false;
+    if (
+      exclude !== "ownership" &&
+      selectedOwnership &&
+      g.ownership !== selectedOwnership
+    )
+      return false;
+    if (exclude !== "format" && selectedFormat && g.format !== selectedFormat)
+      return false;
 
-    if (exclude !== "status" && selectedStatus && g.status !== selectedStatus) return false;
-    if (exclude !== "ownership" && selectedOwnership && g.ownership !== selectedOwnership) return false;
-    if (exclude !== "format" && selectedFormat && g.format !== selectedFormat) return false;
-
-    // Platforms = include
     if (exclude !== "platforms" && selectedPlatform) {
       const set = new Set(g.platforms.map((x) => x.toLowerCase()));
       if (!set.has(selectedPlatform.toLowerCase())) return false;
@@ -457,8 +414,21 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -509,8 +479,21 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -569,7 +552,6 @@ function CheckboxRow({
         color: COLORS.text,
         userSelect: "none",
         cursor: "pointer",
-        margin: 0,
       }}
     >
       <input
@@ -583,13 +565,59 @@ function CheckboxRow({
   );
 }
 
+function TopTabs({
+  viewMode,
+  setViewMode,
+  counts,
+}: {
+  viewMode: ViewMode;
+  setViewMode: (v: ViewMode) => void;
+  counts: { games: number; backlogQueue: number; wishlist: number };
+}) {
+  const btn = (active: boolean): React.CSSProperties => ({
+    border: `1px solid ${COLORS.border}`,
+    background: active ? COLORS.rowActive : COLORS.card,
+    color: COLORS.text,
+    borderRadius: 999,
+    padding: "8px 12px",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontSize: 12,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+  });
+
+  return (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+      <button style={btn(viewMode === "games")} onClick={() => setViewMode("games")}>
+        Games <CountBadge n={counts.games} />
+      </button>
+      <button
+        style={btn(viewMode === "backlogQueue")}
+        onClick={() => setViewMode("backlogQueue")}
+      >
+        Backlog Queue <CountBadge n={counts.backlogQueue} />
+      </button>
+      <button
+        style={btn(viewMode === "wishlist")}
+        onClick={() => setViewMode("wishlist")}
+      >
+        Wishlist <CountBadge n={counts.wishlist} />
+      </button>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const csvUrl = process.env.NEXT_PUBLIC_SHEET_CSV_URL;
 
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tileSize, setTileSize] = useState(100);
+  const [viewMode, setViewMode] = useState<ViewMode>("games");
+
+  const [tileSize, setTileSize] = useState(150);
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -603,12 +631,7 @@ export default function HomePage() {
   const [onlyBacklog, setOnlyBacklog] = useState(false);
   const [onlyCompleted, setOnlyCompleted] = useState(false);
 
-  // ✅ NEW
-  const [onlyNowPlaying, setOnlyNowPlaying] = useState(false);
-  const [onlyAbandoned, setOnlyAbandoned] = useState(false);
-
-  // ✅ include Date Added in sort options
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateAdded" | "dateCompleted">(
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted">(
     "releaseDate"
   );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -620,7 +643,6 @@ export default function HomePage() {
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
 
-  // ✅ mobile sidebar open/close
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
@@ -634,6 +656,7 @@ export default function HomePage() {
       const parsed = Papa.parse<Row>(text, { header: true, skipEmptyLines: true });
       const mapped = (parsed.data as Row[]).map(rowToGame).filter(Boolean) as Game[];
 
+      // ✅ dedupe here
       setGames(dedupeByTitle(mapped));
       setLoading(false);
     }
@@ -648,6 +671,13 @@ export default function HomePage() {
   const allGenres = useMemo(() => uniqueSorted(games.flatMap((g) => g.genres)), [games]);
   const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
 
+  const tabCounts = useMemo(() => {
+    const gamesCount = games.length;
+    const backlogQueue = games.filter((g) => g.status === "Queued").length;
+    const wishlist = games.filter((g) => g.ownership === "Wishlist").length;
+    return { games: gamesCount, backlogQueue, wishlist };
+  }, [games]);
+
   const platformCounts = useMemo(() => {
     const base = buildBaseForFacet({
       games,
@@ -660,8 +690,7 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      onlyNowPlaying,
-      onlyAbandoned,
+      viewMode,
       exclude: "platforms",
     });
     return countByTagList(base, (g) => g.platforms);
@@ -676,8 +705,7 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
+    viewMode,
   ]);
 
   const statusCounts = useMemo(() => {
@@ -692,8 +720,7 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      onlyNowPlaying,
-      onlyAbandoned,
+      viewMode,
       exclude: "status",
     });
     return countByKey(base, (g) => g.status);
@@ -708,8 +735,7 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
+    viewMode,
   ]);
 
   const ownershipCounts = useMemo(() => {
@@ -724,8 +750,7 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      onlyNowPlaying,
-      onlyAbandoned,
+      viewMode,
       exclude: "ownership",
     });
     return countByKey(base, (g) => g.ownership);
@@ -740,8 +765,7 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
+    viewMode,
   ]);
 
   const formatCounts = useMemo(() => {
@@ -756,8 +780,7 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      onlyNowPlaying,
-      onlyAbandoned,
+      viewMode,
       exclude: "format",
     });
     return countByKey(base, (g) => g.format);
@@ -772,8 +795,7 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
+    viewMode,
   ]);
 
   const yearsPlayedCounts = useMemo(() => {
@@ -788,8 +810,7 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      onlyNowPlaying,
-      onlyAbandoned,
+      viewMode,
       exclude: "yearsPlayed",
     });
     return countByTagList(base, (g) => g.yearPlayed);
@@ -804,8 +825,7 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
+    viewMode,
   ]);
 
   const genreCounts = useMemo(() => {
@@ -820,8 +840,7 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      onlyNowPlaying,
-      onlyAbandoned,
+      viewMode,
       exclude: "genres",
     });
     return countByTagList(base, (g) => g.genres);
@@ -836,22 +855,21 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
+    viewMode,
   ]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
 
     const base = games.filter((g) => {
+      // ✅ top tabs filter
+      if (viewMode === "backlogQueue" && g.status !== "Queued") return false;
+      if (viewMode === "wishlist" && g.ownership !== "Wishlist") return false;
+
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
       if (onlyBacklog && !toBool(g.backlog)) return false;
       if (onlyCompleted && !toBool(g.completed)) return false;
-
-      // ✅ NEW status checkbox filters
-      if (onlyNowPlaying && g.status !== "Now Playing") return false;
-      if (onlyAbandoned && g.status !== "Abandoned") return false;
 
       if (selectedStatus && g.status !== selectedStatus) return false;
       if (selectedOwnership && g.ownership !== selectedOwnership) return false;
@@ -884,13 +902,15 @@ export default function HomePage() {
 
     return base.sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
-      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "releaseDate")
+        return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+      if (sortBy === "dateCompleted")
+        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
       return 0;
     });
   }, [
     games,
+    viewMode,
     q,
     selectedPlatform,
     selectedStatus,
@@ -900,8 +920,6 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
     sortBy,
     sortDir,
   ]);
@@ -928,8 +946,6 @@ export default function HomePage() {
     setSelectedFormat("");
     setOnlyBacklog(false);
     setOnlyCompleted(false);
-    setOnlyNowPlaying(false);
-    setOnlyAbandoned(false);
   }
 
   const headerAvatarUrl =
@@ -964,7 +980,9 @@ export default function HomePage() {
             transition: transform 160ms ease;
             border-right: 1px solid ${COLORS.border};
           }
-          .sidebar.open { transform: translateX(0); }
+          .sidebar.open {
+            transform: translateX(0);
+          }
           .overlay {
             position: fixed;
             inset: 0;
@@ -982,6 +1000,7 @@ export default function HomePage() {
           }
           .mobileOnly { display: block !important; }
         }
+
         .mobileOnly { display: none; }
       `}</style>
 
@@ -1053,7 +1072,6 @@ export default function HomePage() {
               <SmallSelect value={sortBy} onChange={(v) => setSortBy(v as any)}>
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
-                <option value="dateAdded">Date Added</option>
                 <option value="dateCompleted">Date Completed</option>
               </SmallSelect>
 
@@ -1064,24 +1082,10 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ✅ FILTER CHECKBOXES - aligned in a 2-column grid */}
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 6 }}>FILTERS</div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                columnGap: 14,
-                rowGap: 6,
-                alignItems: "center",
-              }}
-            >
-              <CheckboxRow label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
-              <CheckboxRow label="Now Playing" checked={onlyNowPlaying} onChange={setOnlyNowPlaying} />
-
-              <CheckboxRow label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
-              <CheckboxRow label="Abandoned" checked={onlyAbandoned} onChange={setOnlyAbandoned} />
-            </div>
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>FILTERS</div>
+            <CheckboxRow label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
+            <CheckboxRow label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
           </div>
 
           <div style={{ marginTop: 12 }}>
@@ -1115,15 +1119,11 @@ export default function HomePage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={(y) => {
-            setSelectedYearsPlayed((prev) => prev.includes(y) ? prev.filter(v => v !== y) : [...prev, y]);
-          }} />
+          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={(g) => {
-            setSelectedGenres((prev) => prev.includes(g) ? prev.filter(v => v !== g) : [...prev, g]);
-          }} />
+          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
         </CollapsibleSection>
 
         <button
@@ -1167,11 +1167,12 @@ export default function HomePage() {
             >
               Filters
             </button>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>
-              {filtered.length} games
-            </div>
+            <div style={{ fontSize: 12, color: COLORS.muted }}>{filtered.length} shown</div>
           </div>
         </div>
+
+        {/* ✅ Top navigation like ggapp */}
+        <TopTabs viewMode={viewMode} setViewMode={setViewMode} counts={tabCounts} />
 
         {loading ? (
           <div>Loading…</div>
@@ -1183,9 +1184,9 @@ export default function HomePage() {
               gap: 16,
             }}
           >
-            {filtered.map((g, i) => (
+            {filtered.map((g) => (
               <div
-                key={`${titleKey(g.title)}-${i}`}
+                key={titleKey(g.title)} // ✅ stable key = deduped title
                 style={{
                   aspectRatio: "2 / 3",
                   background: COLORS.card,
@@ -1200,16 +1201,10 @@ export default function HomePage() {
                     src={g.coverUrl}
                     alt={g.title}
                     loading="lazy"
-                    referrerPolicy="no-referrer"
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     onError={(e) => {
-                      // If something fails to load, hide broken image icon and show a placeholder
-                      const img = e.currentTarget;
-                      img.style.display = "none";
-                      const parent = img.parentElement;
-                      if (parent) {
-                        parent.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:${COLORS.muted};font-size:12px;">Cover failed</div>`;
-                      }
+                      // optional: prevent broken image icon from being super ugly
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
                     }}
                   />
                 ) : (
