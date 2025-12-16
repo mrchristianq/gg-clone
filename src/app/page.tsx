@@ -1,7 +1,6 @@
-// DEPLOY_TEST: 2025-12-16
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 
 type Row = Record<string, string>;
@@ -10,426 +9,328 @@ type Game = {
   title: string;
   coverUrl: string;
 
-  platform: string; // some sheets have single Platform
   platforms: string[];
+  genres: string[];
+  yearPlayed: string[];
 
   status: string;
   ownership: string;
   format: string;
-
-  genres: string[];
-  yearPlayed: string[];
 
   releaseDate: string;
   dateAdded: string;
 
   backlog: string;
   completed: string;
-
-  igdbId: string;
 };
 
 const CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSqSRFtUg55P7DGs-XZv01eeIzBar_9vbux8gYtQNJRbKFF4wnfnb5tRnRVStHGTAPzbhk_FHm87CdT/pub?gid=1501557654&single=true&output=csv";
 
-// ---------- styling ----------
 const COLORS = {
   bg: "#0b0d10",
-  panel: "#0f1217",
-  card: "#10141b",
-  border: "rgba(255,255,255,0.08)",
+  panel: "#0f1318",
+  card: "#141a22",
+  border: "rgba(255,255,255,0.10)",
   text: "rgba(255,255,255,0.92)",
-  muted: "rgba(255,255,255,0.65)",
+  muted: "rgba(255,255,255,0.60)",
   faint: "rgba(255,255,255,0.45)",
-  green: "#27e08a",
+  green: "#22c55e",
+  greenSoft: "rgba(34,197,94,0.22)",
 };
 
-function toBool(v: string) {
-  const s = String(v || "").trim().toLowerCase();
-  return s === "true" || s === "yes" || s === "1" || s === "y" || s === "checked";
+const DEFAULT_COVER_SIZE = 100;
+const MOBILE_BREAKPOINT = 860;
+
+function titleKey(t: string) {
+  return (t || "").trim().toLowerCase();
 }
 
-function norm(v: string) {
+function norm(v?: string) {
   return String(v ?? "").trim();
 }
 
-function splitTags(v: string) {
+function toBool(v: string) {
+  const s = norm(v).toLowerCase();
+  return s === "true" || s === "yes" || s === "y" || s === "1" || s === "checked";
+}
+
+function splitTags(v?: string) {
   const s = norm(v);
   if (!s) return [];
+  // split on comma or semicolon
   return s
-    .split(/[;,|]/g)
+    .split(/[,;]+/g)
     .map((x) => x.trim())
     .filter(Boolean);
 }
 
-function titleKey(t: string) {
-  return norm(t).toLowerCase();
-}
-
-function parseDateMs(s: string) {
-  // expects yyyy-mm-dd mostly; Date() will handle some variants
-  const d = new Date(s);
+function parseDateLike(s: string): number {
+  // Accept "yyyy-mm-dd" or "mm/dd/yyyy" etc.
+  const t = norm(s);
+  if (!t) return 0;
+  const d = new Date(t);
   const ms = d.getTime();
   return Number.isFinite(ms) ? ms : 0;
 }
 
 function pickCover(row: Row) {
-  // Prefer CoverURL; keep your old fallback if you had CoverURL vs CoverURL column
-  return norm(row["CoverURL"] || row["CoverUrl"] || row["Cover"] || row["Cover URL"]);
+  // prefer CoverURL, fallback CoverURL column variants
+  const a = norm(row["CoverURL"]);
+  const b = norm(row["Cover Url"]);
+  const c = norm(row["CoverURL "]);
+  return a || b || c;
 }
 
 function rowToGame(row: Row): Game {
-  const title = norm(row["Title"] || row["Name"] || "");
-  const coverUrl = pickCover(row);
-
-  const platforms = splitTags(row["Platforms"] || "");
-  const platform = norm(row["Platform"] || "");
+  const title = norm(row["Title"] || row["Name"]);
 
   return {
     title,
-    coverUrl,
+    coverUrl: pickCover(row),
 
-    platform,
-    platforms,
+    platforms: splitTags(row["Platforms"] || row["Platform"]),
+    genres: splitTags(row["Genres"]),
+    yearPlayed: splitTags(row["YearPlayed"] || row["Year Played"]),
 
     status: norm(row["Status"]),
     ownership: norm(row["Ownership"]),
     format: norm(row["Format"]),
-
-    genres: splitTags(row["Genres"]),
-    yearPlayed: splitTags(row["YearPlayed"]),
 
     releaseDate: norm(row["ReleaseDate"] || row["Release Date"]),
     dateAdded: norm(row["DateAdded"] || row["Date Added"]),
 
     backlog: norm(row["Backlog"]),
     completed: norm(row["Completed"]),
-
-    igdbId: norm(row["IGDB_ID"] || row["IGDB ID"]),
   };
 }
 
-// Dedupe by IGDB_ID if possible; else Title
-function dedupeGames(games: Game[]): Game[] {
-  const byId = new Map<string, Game>();
-  const byTitle = new Map<string, Game>();
-
+function dedupeByTitle(games: Game[]) {
+  // If there are duplicates due to multiple platforms, keep 1 per title and merge tags.
+  const map = new Map<string, Game>();
   for (const g of games) {
-    const id = norm(g.igdbId);
-    if (id) {
-      if (!byId.has(id)) byId.set(id, g);
-      continue;
-    }
     const k = titleKey(g.title);
     if (!k) continue;
-    if (!byTitle.has(k)) byTitle.set(k, g);
+
+    const existing = map.get(k);
+    if (!existing) {
+      map.set(k, g);
+      continue;
+    }
+
+    const mergedPlatforms = Array.from(new Set([...(existing.platforms || []), ...(g.platforms || [])])).sort();
+    const mergedGenres = Array.from(new Set([...(existing.genres || []), ...(g.genres || [])])).sort();
+    const mergedYearPlayed = Array.from(new Set([...(existing.yearPlayed || []), ...(g.yearPlayed || [])])).sort();
+
+    map.set(k, {
+      ...existing,
+      // prefer a cover if existing missing
+      coverUrl: existing.coverUrl || g.coverUrl,
+      platforms: mergedPlatforms,
+      genres: mergedGenres,
+      yearPlayed: mergedYearPlayed,
+      // keep “best” strings if missing
+      status: existing.status || g.status,
+      ownership: existing.ownership || g.ownership,
+      format: existing.format || g.format,
+      releaseDate: existing.releaseDate || g.releaseDate,
+      dateAdded: existing.dateAdded || g.dateAdded,
+      backlog: existing.backlog || g.backlog,
+      completed: existing.completed || g.completed,
+    });
   }
 
-  // Keep stable-ish order: first all byId in insertion order, then byTitle
-  return [...byId.values(), ...byTitle.values()];
+  return Array.from(map.values());
 }
 
-type ViewMode = "games" | "nowPlaying" | "queued" | "wishlist" | "completed";
+type TabKey = "games" | "nowPlaying" | "queued" | "wishlist" | "completed";
 
 export default function Page() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // cover size default = 100
-  const [coverSize, setCoverSize] = useState(100);
+  const [coverSize, setCoverSize] = useState<number>(DEFAULT_COVER_SIZE);
 
-  // top nav
-  const [view, setView] = useState<ViewMode>("games");
+  // Filters
+  const [selGenres, setSelGenres] = useState<string[]>([]);
+  const [selPlatforms, setSelPlatforms] = useState<string[]>([]);
+  const [selYearPlayed, setSelYearPlayed] = useState<string[]>([]);
 
-  // ---- your existing filters (keep as-is, add more if you already have them) ----
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
-  const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
-  const [selectedOwnership, setSelectedOwnership] = useState<string[]>([]);
-  const [selectedFormat, setSelectedFormat] = useState<string[]>([]);
-  const [selectedYearPlayed, setSelectedYearPlayed] = useState<string[]>([]);
+  const [onlyBacklog, setOnlyBacklog] = useState(false);
+  const [onlyCompleted, setOnlyCompleted] = useState(false);
+  const [onlyNowPlaying, setOnlyNowPlaying] = useState(false);
+  const [onlyAbandoned, setOnlyAbandoned] = useState(false);
 
-  const [filterBacklog, setFilterBacklog] = useState(false);
-  const [filterCompleted, setFilterCompleted] = useState(false);
+  const [sortBy, setSortBy] = useState<"releaseDate" | "title" | "dateAdded">("releaseDate");
 
-  // basic sorts (no custom)
-  const [sortKey, setSortKey] = useState<"releaseDate" | "title" | "dateAdded">("releaseDate");
-  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+  // Tabs
+  const [activeTab, setActiveTab] = useState<TabKey>("games");
+
+  // Responsive
+  const [isMobile, setIsMobile] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  const didInitFilters = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    const onResize = () => {
+      const mobile = window.innerWidth <= MOBILE_BREAKPOINT;
+      setIsMobile(mobile);
+
+      // initialize filtersOpen once based on current size
+      if (!didInitFilters.current) {
+        setFiltersOpen(!mobile); // ✅ closed on mobile, open on desktop
+        didInitFilters.current = true;
+      }
+    };
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
     setLoading(true);
-    setErr("");
+    setLoadError(null);
 
     fetch(CSV_URL, { cache: "no-store" })
-      .then((r) => r.text())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
+        return r.text();
+      })
       .then((text) => {
-        if (cancelled) return;
-        const parsed = Papa.parse<Row>(text, { header: true, skipEmptyLines: true });
-        const data = (parsed.data || []).filter((r) => r && Object.keys(r).length > 0);
-        setRows(data);
+        if (!alive) return;
+        const parsed = Papa.parse<Row>(text, {
+          header: true,
+          skipEmptyLines: true,
+        });
+        setRows((parsed.data || []).filter((r) => r && Object.keys(r).length));
         setLoading(false);
       })
       .catch((e) => {
-        if (cancelled) return;
-        setErr(String(e));
+        if (!alive) return;
+        setLoadError(String(e));
         setLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      alive = false;
     };
   }, []);
 
-  const allGames = useMemo(() => {
-    const games = rows
-      .map(rowToGame)
-      .filter((g) => g.title && g.coverUrl); // keep covers only; change if you want "No cover"
-    return dedupeGames(games);
+  const games = useMemo(() => {
+    const g = rows.map(rowToGame).filter((x) => x.title);
+    return dedupeByTitle(g);
   }, [rows]);
 
-  // build option lists
-  const optionCounts = useMemo(() => {
-    const counts = {
-      genres: new Map<string, number>(),
-      platforms: new Map<string, number>(),
-      status: new Map<string, number>(),
-      ownership: new Map<string, number>(),
-      format: new Map<string, number>(),
-      yearPlayed: new Map<string, number>(),
-    };
+  const allGenres = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of games) for (const x of g.genres) set.add(x);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [games]);
 
-    for (const g of allGames) {
-      for (const x of g.genres) counts.genres.set(x, (counts.genres.get(x) || 0) + 1);
+  const allPlatforms = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of games) for (const x of g.platforms) set.add(x);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [games]);
 
-      const plats = g.platforms.length ? g.platforms : g.platform ? [g.platform] : [];
-      for (const x of plats) counts.platforms.set(x, (counts.platforms.get(x) || 0) + 1);
+  const allYears = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of games) for (const y of g.yearPlayed) set.add(y);
+    return Array.from(set).sort((a, b) => (a < b ? 1 : -1)); // newest first
+  }, [games]);
 
-      if (g.status) counts.status.set(g.status, (counts.status.get(g.status) || 0) + 1);
-      if (g.ownership) counts.ownership.set(g.ownership, (counts.ownership.get(g.ownership) || 0) + 1);
-      if (g.format) counts.format.set(g.format, (counts.format.get(g.format) || 0) + 1);
+  // Tab predicates (based on your new top menu logic)
+  const tabFiltered = useMemo(() => {
+    const nowPlaying = (g: Game) => norm(g.status).toLowerCase() === "now playing";
+    const queued = (g: Game) => norm(g.status).toLowerCase() === "queued";
+    const wishlist = (g: Game) => norm(g.ownership).toLowerCase() === "wishlist";
+    const completed = (g: Game) => toBool(g.completed) || norm(g.status).toLowerCase() === "completed";
 
-      for (const x of g.yearPlayed) counts.yearPlayed.set(x, (counts.yearPlayed.get(x) || 0) + 1);
-    }
-
-    const toList = (m: Map<string, number>) =>
-      [...m.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => ({ label, count }));
-
-    return {
-      genres: toList(counts.genres),
-      platforms: toList(counts.platforms),
-      status: toList(counts.status),
-      ownership: toList(counts.ownership),
-      format: toList(counts.format),
-      yearPlayed: toList(counts.yearPlayed).sort((a, b) => Number(b.label) - Number(a.label)),
-    };
-  }, [allGames]);
-
-  // Apply top-nav view filters FIRST
-  const viewFiltered = useMemo(() => {
-    return allGames.filter((g) => {
-      if (view === "games") return true;
-      if (view === "nowPlaying") return norm(g.status).toLowerCase() === "now playing";
-      if (view === "queued") return norm(g.status).toLowerCase() === "queued";
-      if (view === "wishlist") return norm(g.ownership).toLowerCase() === "wishlist";
-      if (view === "completed") {
-        const statusCompleted = norm(g.status).toLowerCase() === "completed";
-        const completedFlag = toBool(g.completed);
-        return statusCompleted || completedFlag;
-      }
+    return games.filter((g) => {
+      if (activeTab === "games") return true;
+      if (activeTab === "nowPlaying") return nowPlaying(g);
+      if (activeTab === "queued") return queued(g);
+      if (activeTab === "wishlist") return wishlist(g);
+      if (activeTab === "completed") return completed(g);
       return true;
     });
-  }, [allGames, view]);
+  }, [games, activeTab]);
 
-  // Apply left-panel filters
   const filtered = useMemo(() => {
-    return viewFiltered.filter((g) => {
-      if (filterBacklog && !toBool(g.backlog)) return false;
-      if (filterCompleted && !toBool(g.completed) && norm(g.status).toLowerCase() !== "completed") return false;
+    const sGenres = new Set(selGenres);
+    const sPlatforms = new Set(selPlatforms);
+    const sYears = new Set(selYearPlayed);
 
-      if (selectedGenres.length) {
-        const set = new Set(g.genres.map((x) => x.toLowerCase()));
-        if (!selectedGenres.some((x) => set.has(x.toLowerCase()))) return false;
+    return tabFiltered.filter((g) => {
+      // left filters
+      if (sGenres.size) {
+        const hit = g.genres.some((x) => sGenres.has(x));
+        if (!hit) return false;
+      }
+      if (sPlatforms.size) {
+        const hit = g.platforms.some((x) => sPlatforms.has(x));
+        if (!hit) return false;
+      }
+      if (sYears.size) {
+        const hit = g.yearPlayed.some((x) => sYears.has(x));
+        if (!hit) return false;
       }
 
-      if (selectedPlatforms.length) {
-        const plats = g.platforms.length ? g.platforms : g.platform ? [g.platform] : [];
-        const set = new Set(plats.map((x) => x.toLowerCase()));
-        if (!selectedPlatforms.some((x) => set.has(x.toLowerCase()))) return false;
-      }
+      if (onlyBacklog && !toBool(g.backlog)) return false;
+      if (onlyCompleted && !toBool(g.completed)) return false;
 
-      if (selectedStatus.length) {
-        if (!selectedStatus.some((x) => x.toLowerCase() === g.status.toLowerCase())) return false;
-      }
-
-      if (selectedOwnership.length) {
-        if (!selectedOwnership.some((x) => x.toLowerCase() === g.ownership.toLowerCase())) return false;
-      }
-
-      if (selectedFormat.length) {
-        if (!selectedFormat.some((x) => x.toLowerCase() === g.format.toLowerCase())) return false;
-      }
-
-      if (selectedYearPlayed.length) {
-        const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
-        if (!selectedYearPlayed.some((x) => set.has(x.toLowerCase()))) return false;
-      }
+      if (onlyNowPlaying && norm(g.status).toLowerCase() !== "now playing") return false;
+      if (onlyAbandoned && norm(g.status).toLowerCase() !== "abandoned") return false;
 
       return true;
     });
   }, [
-    viewFiltered,
-    filterBacklog,
-    filterCompleted,
-    selectedGenres,
-    selectedPlatforms,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedYearPlayed,
+    tabFiltered,
+    selGenres,
+    selPlatforms,
+    selYearPlayed,
+    onlyBacklog,
+    onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
   ]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
-    const dir = sortDir === "desc" ? -1 : 1;
-
-    arr.sort((a, b) => {
-      if (sortKey === "title") {
-        return a.title.localeCompare(b.title) * dir;
-      }
-      if (sortKey === "dateAdded") {
-        return (parseDateMs(a.dateAdded) - parseDateMs(b.dateAdded)) * dir;
-      }
-      // releaseDate default
-      return (parseDateMs(a.releaseDate) - parseDateMs(b.releaseDate)) * dir;
-    });
-
+    if (sortBy === "title") {
+      arr.sort((a, b) => a.title.localeCompare(b.title));
+    } else if (sortBy === "dateAdded") {
+      arr.sort((a, b) => parseDateLike(b.dateAdded) - parseDateLike(a.dateAdded));
+    } else {
+      // release date (default)
+      arr.sort((a, b) => parseDateLike(b.releaseDate) - parseDateLike(a.releaseDate));
+    }
     return arr;
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered, sortBy]);
 
-  // header stats (you can keep these even if you change later)
-  const stats = useMemo(() => {
-    const total = allGames.length;
-    const queued = allGames.filter((g) => norm(g.status).toLowerCase() === "queued").length;
-    const wishlist = allGames.filter((g) => norm(g.ownership).toLowerCase() === "wishlist").length;
-
-    const now = new Date();
-    const year = now.getFullYear();
-    const playedThisYear = allGames.filter((g) => g.yearPlayed.includes(String(year))).length;
-
-    return { total, queued, wishlist, playedThisYear, year };
-  }, [allGames]);
-
-  function toggleMulti(current: string[], value: string) {
-    const v = value.trim();
-    if (!v) return current;
-    const exists = current.some((x) => x.toLowerCase() === v.toLowerCase());
-    if (exists) return current.filter((x) => x.toLowerCase() !== v.toLowerCase());
-    return [...current, v];
-  }
-
-  function OptionList({
-    title,
-    options,
-    selected,
-    onToggle,
-  }: {
-    title: string;
-    options: { label: string; count: number }[];
-    selected: string[];
-    onToggle: (label: string) => void;
-  }) {
-    return (
-      <div style={{ marginTop: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, marginBottom: 6 }}>
-          {title.toUpperCase()}
-        </div>
-
-        <div style={{ display: "grid", gap: 4 }}>
-          {options.map((o) => {
-            const active = selected.some((x) => x.toLowerCase() === o.label.toLowerCase());
-            return (
-              <button
-                key={o.label}
-                onClick={() => onToggle(o.label)}
-                style={{
-                  width: "100%",
-                  textAlign: "left",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  padding: "6px 8px",
-                  borderRadius: 10,
-                  background: active ? "rgba(39,224,138,0.12)" : "transparent",
-                  border: active ? `1px solid rgba(39,224,138,0.35)` : `1px solid ${COLORS.border}`,
-                  color: COLORS.text,
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
-              >
-                <span style={{ opacity: active ? 1 : 0.9 }}>{o.label}</span>
-                <span
-                  style={{
-                    minWidth: 28,
-                    textAlign: "center",
-                    fontSize: 11,
-                    padding: "2px 8px",
-                    borderRadius: 999,
-                    border: `1px solid ${COLORS.border}`,
-                    color: COLORS.muted,
-                    background: "rgba(255,255,255,0.03)",
-                  }}
-                >
-                  {o.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  const Tab = ({
-    id,
-    label,
-  }: {
-    id: ViewMode;
-    label: string;
-  }) => {
-    const active = view === id;
-    return (
-      <button
-        onClick={() => setView(id)}
-        style={{
-          background: "transparent",
-          border: "none",
-          padding: "10px 8px",
-          cursor: "pointer",
-          color: active ? COLORS.text : COLORS.muted,
-          fontWeight: 900,
-          fontSize: 16, // ✅ bigger
-          position: "relative",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {label}
-        <span
-          style={{
-            position: "absolute",
-            left: 8,
-            right: 8,
-            bottom: 2,
-            height: 2,
-            borderRadius: 999,
-            background: active ? COLORS.green : "transparent",
-          }}
-        />
-      </button>
-    );
+  const toggle = (list: string[], value: string) => {
+    const s = new Set(list);
+    if (s.has(value)) s.delete(value);
+    else s.add(value);
+    return Array.from(s);
   };
+
+  // Stats on top right (like your inspiration)
+  const totalGames = games.length;
+  const totalQueued = games.filter((g) => norm(g.status).toLowerCase() === "queued").length;
+  const totalWishlist = games.filter((g) => norm(g.ownership).toLowerCase() === "wishlist").length;
+  const totalNowPlaying = games.filter((g) => norm(g.status).toLowerCase() === "now playing").length;
+  const totalCompleted = games.filter((g) => toBool(g.completed) || norm(g.status).toLowerCase() === "completed").length;
+
+  const topTabs: { key: TabKey; label: string }[] = [
+    { key: "games", label: "Games" },
+    { key: "nowPlaying", label: "Now Playing" },
+    { key: "queued", label: "Queued" },
+    { key: "wishlist", label: "Wishlist" },
+    { key: "completed", label: "Completed" },
+  ];
 
   return (
     <div
@@ -441,14 +342,14 @@ export default function Page() {
           'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
       }}
     >
-      {/* Header */}
+      {/* HEADER */}
       <header
         style={{
           position: "sticky",
           top: 0,
-          zIndex: 20,
+          zIndex: 10,
           background: "rgba(11,13,16,0.92)",
-          backdropFilter: "blur(8px)",
+          backdropFilter: "blur(10px)",
           borderBottom: `1px solid ${COLORS.border}`,
         }}
       >
@@ -456,309 +357,473 @@ export default function Page() {
           style={{
             maxWidth: 1400,
             margin: "0 auto",
-            padding: "14px 14px 6px",
+            padding: isMobile ? "10px 12px" : "14px 18px",
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
             gap: 14,
-            flexWrap: "wrap", // ✅ ensures mobile stays visible
+            justifyContent: "space-between",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img
-              src="https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no"
-              alt="Chris"
-              style={{ width: 72, height: 72, borderRadius: 999, border: `1px solid ${COLORS.border}` }}
-            />
-            <div>
-              <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.1 }}>Chris&apos; Game Library</div>
-              <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
-                {loading ? "Loading…" : `${allGames.length} games`}
-              </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 900, letterSpacing: 0.2 }}>
+              Chris&apos; Game Library
+            </div>
+            <div style={{ fontSize: 12, color: COLORS.muted }}>
+              {loading ? "Loading…" : loadError ? "Error loading CSV" : `${games.length} games`}
             </div>
           </div>
 
-          {/* Stats on right (kept minimal) */}
-          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.total}</div>
-              <div style={{ fontSize: 11, color: COLORS.muted }}>Games</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.queued}</div>
-              <div style={{ fontSize: 11, color: COLORS.muted }}>Queued</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.wishlist}</div>
-              <div style={{ fontSize: 11, color: COLORS.muted }}>Wishlist</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.playedThisYear}</div>
-              <div style={{ fontSize: 11, color: COLORS.muted }}>Played in {stats.year}</div>
-            </div>
+          {/* Stats (compact on mobile) */}
+          <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }}>
+            <StatBox label="Games" value={totalGames} compact={isMobile} />
+            <StatBox label="Queued" value={totalQueued} compact={isMobile} />
+            <StatBox label="Wishlist" value={totalWishlist} compact={isMobile} />
+            {!isMobile && <StatBox label="Now Playing" value={totalNowPlaying} compact={false} />}
+            {!isMobile && <StatBox label="Completed" value={totalCompleted} compact={false} />}
           </div>
         </div>
 
-        {/* Top nav tabs */}
+        {/* Top tabs row */}
         <div
           style={{
             maxWidth: 1400,
             margin: "0 auto",
-            padding: "0 14px 10px",
+            padding: isMobile ? "6px 10px 10px" : "8px 18px 12px",
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            flexWrap: "wrap", // ✅ show on mobile too
+            justifyContent: "space-between",
+            gap: 12,
           }}
         >
-          <Tab id="games" label="Games" />
-          <Tab id="nowPlaying" label="Now Playing" />
-          <Tab id="queued" label="Queued" />
-          <Tab id="wishlist" label="Wishlist" />
-          <Tab id="completed" label="Completed" />
+          <div
+            style={{
+              display: "flex",
+              gap: isMobile ? 8 : 14,
+              alignItems: "center",
+              flexWrap: "nowrap",
+              width: "100%",
+            }}
+          >
+            {topTabs.map((t) => {
+              const active = activeTab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: active ? COLORS.text : COLORS.muted,
+                    cursor: "pointer",
+                    padding: isMobile ? "6px 6px" : "8px 10px",
+                    fontSize: isMobile ? 12 : 15, // ✅ smaller on mobile to fit one row
+                    fontWeight: 900,
+                    letterSpacing: 0.2,
+                    borderBottom: active ? `2px solid ${COLORS.green}` : "2px solid transparent",
+                    lineHeight: 1.1,
+                    whiteSpace: "nowrap",
+                    flex: isMobile ? "1 1 20%" : "0 0 auto", // ✅ helps fit 5 on one row
+                    textAlign: "center",
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Mobile filter toggle */}
+          {isMobile && (
+            <button
+              onClick={() => setFiltersOpen((v) => !v)}
+              style={{
+                marginLeft: 10,
+                height: 34,
+                padding: "0 10px",
+                borderRadius: 12,
+                background: COLORS.card,
+                border: `1px solid ${COLORS.border}`,
+                color: COLORS.text,
+                cursor: "pointer",
+                fontWeight: 900,
+                fontSize: 12,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {filtersOpen ? "Hide Filters" : "Show Filters"}
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Layout */}
-      <div
+      <main
         style={{
           maxWidth: 1400,
           margin: "0 auto",
-          padding: 14,
+          padding: isMobile ? "12px" : "16px 18px 40px",
           display: "grid",
-          gridTemplateColumns: "290px 1fr",
-          gap: 14,
+          gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
+          gap: isMobile ? 12 : 16,
+          alignItems: "start",
         }}
       >
-        {/* Left panel */}
+        {/* FILTERS */}
         <aside
           style={{
             background: COLORS.panel,
             border: `1px solid ${COLORS.border}`,
             borderRadius: 16,
-            padding: 12,
-            height: "fit-content",
-            position: "sticky",
-            top: 140,
+            padding: isMobile ? 12 : 14,
+            display: isMobile && !filtersOpen ? "none" : "block", // ✅ closed by default on mobile
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <div style={{ fontWeight: 900 }}>Filters</div>
-            <button
-              onClick={() => {
-                setSelectedGenres([]);
-                setSelectedPlatforms([]);
-                setSelectedStatus([]);
-                setSelectedOwnership([]);
-                setSelectedFormat([]);
-                setSelectedYearPlayed([]);
-                setFilterBacklog(false);
-                setFilterCompleted(false);
-              }}
-              style={{
-                border: `1px solid ${COLORS.border}`,
-                background: "transparent",
-                color: COLORS.muted,
-                padding: "6px 10px",
-                borderRadius: 10,
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 800,
-              }}
-            >
-              Clear
-            </button>
-          </div>
+          {!isMobile && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontWeight: 900 }}>Filters</div>
+            </div>
+          )}
 
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, marginBottom: 6 }}>COVER SIZE</div>
+          <Section title="Sort">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              style={selectStyle()}
+            >
+              <option value="releaseDate">Release Date</option>
+              <option value="dateAdded">Date Added</option>
+              <option value="title">Title</option>
+            </select>
+
+            <div style={{ height: 10 }} />
+
+            <div style={{ color: COLORS.muted, fontSize: 12, marginBottom: 6 }}>Cover size</div>
             <input
               type="range"
               min={60}
-              max={200}
+              max={180}
               value={coverSize}
               onChange={(e) => setCoverSize(Number(e.target.value))}
               style={{ width: "100%" }}
             />
-            <div style={{ fontSize: 11, color: COLORS.muted, marginTop: 6 }}>{coverSize}px</div>
-          </div>
+            <div style={{ fontSize: 12, color: COLORS.muted, marginTop: 4 }}>{coverSize}px</div>
+          </Section>
 
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, marginBottom: 6 }}>SORT</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {[
-                { id: "releaseDate", label: "Release Date" },
-                { id: "dateAdded", label: "Date Added" },
-                { id: "title", label: "Title" },
-              ].map((o) => (
-                <button
-                  key={o.id}
-                  onClick={() => setSortKey(o.id as any)}
-                  style={{
-                    border: `1px solid ${COLORS.border}`,
-                    background: sortKey === o.id ? "rgba(39,224,138,0.12)" : "transparent",
-                    color: sortKey === o.id ? COLORS.text : COLORS.muted,
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 800,
-                  }}
-                >
-                  {o.label}
-                </button>
-              ))}
-              <button
-                onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
-                style={{
-                  border: `1px solid ${COLORS.border}`,
-                  background: "transparent",
-                  color: COLORS.muted,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 800,
-                }}
-              >
-                {sortDir === "desc" ? "Desc" : "Asc"}
-              </button>
+          <Section title="Flags">
+            {/* Row 1: Backlog + Now Playing */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <CheckRow
+                label="Backlog"
+                checked={onlyBacklog}
+                onChange={setOnlyBacklog}
+              />
+              <CheckRow
+                label="Now Playing"
+                checked={onlyNowPlaying}
+                onChange={setOnlyNowPlaying}
+              />
             </div>
-          </div>
 
-          {/* Backlog / Completed flags */}
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, marginBottom: 6 }}>FLAGS</div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: COLORS.text }}>
-              <input type="checkbox" checked={filterBacklog} onChange={(e) => setFilterBacklog(e.target.checked)} />
-              Backlog
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: COLORS.text, marginTop: 6 }}>
-              <input type="checkbox" checked={filterCompleted} onChange={(e) => setFilterCompleted(e.target.checked)} />
-              Completed
-            </label>
-          </div>
+            {/* Row 2: Completed + Abandoned */}
+            <div style={{ height: 6 }} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <CheckRow
+                label="Completed"
+                checked={onlyCompleted}
+                onChange={setOnlyCompleted}
+              />
+              <CheckRow
+                label="Abandoned"
+                checked={onlyAbandoned}
+                onChange={setOnlyAbandoned}
+              />
+            </div>
+          </Section>
 
-          {/* Multi-select option lists */}
-          <OptionList
-            title="Genres"
-            options={optionCounts.genres}
-            selected={selectedGenres}
-            onToggle={(v) => setSelectedGenres((cur) => toggleMulti(cur, v))}
-          />
-          <OptionList
-            title="Platforms"
-            options={optionCounts.platforms}
-            selected={selectedPlatforms}
-            onToggle={(v) => setSelectedPlatforms((cur) => toggleMulti(cur, v))}
-          />
-          <OptionList
-            title="Status"
-            options={optionCounts.status}
-            selected={selectedStatus}
-            onToggle={(v) => setSelectedStatus((cur) => toggleMulti(cur, v))}
-          />
-          <OptionList
-            title="Ownership"
-            options={optionCounts.ownership}
-            selected={selectedOwnership}
-            onToggle={(v) => setSelectedOwnership((cur) => toggleMulti(cur, v))}
-          />
-          <OptionList
-            title="Format"
-            options={optionCounts.format}
-            selected={selectedFormat}
-            onToggle={(v) => setSelectedFormat((cur) => toggleMulti(cur, v))}
-          />
-          <OptionList
-            title="Year Played"
-            options={optionCounts.yearPlayed}
-            selected={selectedYearPlayed}
-            onToggle={(v) => setSelectedYearPlayed((cur) => toggleMulti(cur, v))}
-          />
+          <Section title="Platform">
+            <OptionList
+              options={allPlatforms}
+              selected={selPlatforms}
+              onToggle={(v) => setSelPlatforms(toggle(selPlatforms, v))}
+              counts={countByOption(games, (g) => g.platforms)}
+            />
+          </Section>
+
+          <Section title="Genre">
+            <OptionList
+              options={allGenres}
+              selected={selGenres}
+              onToggle={(v) => setSelGenres(toggle(selGenres, v))}
+              counts={countByOption(games, (g) => g.genres)}
+            />
+          </Section>
+
+          <Section title="Year Played">
+            <OptionList
+              options={allYears}
+              selected={selYearPlayed}
+              onToggle={(v) => setSelYearPlayed(toggle(selYearPlayed, v))}
+              counts={countByOption(games, (g) => g.yearPlayed)}
+            />
+          </Section>
+
+          <button
+            onClick={() => {
+              setSelGenres([]);
+              setSelPlatforms([]);
+              setSelYearPlayed([]);
+              setOnlyBacklog(false);
+              setOnlyCompleted(false);
+              setOnlyNowPlaying(false);
+              setOnlyAbandoned(false);
+            }}
+            style={{
+              width: "100%",
+              height: 40,
+              borderRadius: 12,
+              background: COLORS.card,
+              border: `1px solid ${COLORS.border}`,
+              color: COLORS.text,
+              cursor: "pointer",
+              fontWeight: 900,
+              marginTop: 10,
+            }}
+          >
+            Clear filters
+          </button>
         </aside>
 
-        {/* Main grid */}
-        <main>
-          {err ? (
+        {/* GRID */}
+        <section>
+          {loadError && (
             <div
               style={{
+                padding: 14,
+                borderRadius: 14,
                 border: `1px solid ${COLORS.border}`,
                 background: COLORS.panel,
-                borderRadius: 16,
-                padding: 14,
                 color: COLORS.text,
+                marginBottom: 12,
+                fontSize: 12,
               }}
             >
-              Error: {err}
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Couldn’t load your sheet</div>
+              <div style={{ color: COLORS.muted }}>{loadError}</div>
             </div>
-          ) : null}
-
-          {loading ? (
-            <div style={{ color: COLORS.muted, fontSize: 14 }}>Loading…</div>
-          ) : null}
-
-          {!loading && sorted.length === 0 ? (
-            <div style={{ color: COLORS.muted, fontSize: 14 }}>No games match your filters.</div>
-          ) : null}
+          )}
 
           <div
             style={{
-              marginTop: 10,
               display: "grid",
-              gap: 10,
               gridTemplateColumns: `repeat(auto-fill, minmax(${coverSize}px, 1fr))`,
+              gap: 12,
             }}
           >
-            {sorted.map((g) => (
+            {sorted.map((g, i) => (
               <div
-                key={g.igdbId ? `igdb-${g.igdbId}` : `t-${titleKey(g.title)}`}
-                title={g.title}
+                key={`${titleKey(g.title)}-${i}`}
                 style={{
                   aspectRatio: "2 / 3",
                   background: COLORS.card,
                   borderRadius: 14,
                   overflow: "hidden",
+                  boxShadow: "0 20px 40px rgba(0,0,0,.6)",
                   border: `1px solid ${COLORS.border}`,
-                  boxShadow: "0 18px 40px rgba(0,0,0,.55)",
                 }}
+                title={g.title}
               >
-                <img
-                  src={g.coverUrl}
-                  alt={g.title}
-                  loading="lazy"
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                  onError={(e) => {
-                    // fallback: gray block if cover fails
-                    const el = e.currentTarget;
-                    el.style.display = "none";
-                    const parent = el.parentElement;
-                    if (parent && !parent.querySelector(".fallback")) {
-                      const div = document.createElement("div");
-                      div.className = "fallback";
-                      div.style.height = "100%";
-                      div.style.display = "flex";
-                      div.style.alignItems = "center";
-                      div.style.justifyContent = "center";
-                      div.style.color = COLORS.muted;
-                      div.style.fontSize = "12px";
-                      div.textContent = "Cover failed";
-                      parent.appendChild(div);
-                    }
+                {g.coverUrl ? (
+                  <img
+                    src={g.coverUrl}
+                    alt={g.title}
+                    loading="lazy"
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      img.style.display = "none";
+                      const parent = img.parentElement;
+                      if (parent) parent.setAttribute("data-cover-failed", "1");
+                    }}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: COLORS.muted,
+                      fontSize: 12,
+                    }}
+                  >
+                    No cover
+                  </div>
+                )}
+
+                {/* Fallback label if image hidden */}
+                <div
+                  style={{
+                    display: "none",
+                    height: "100%",
+                    padding: 10,
+                    color: COLORS.muted,
+                    fontSize: 12,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
                   }}
-                />
+                >
+                  Cover failed
+                </div>
               </div>
             ))}
           </div>
-        </main>
-      </div>
-
-      {/* Mobile layout tweak */}
-      <style>{`
-        @media (max-width: 980px) {
-          .layout { grid-template-columns: 1fr !important; }
-        }
-      `}</style>
+        </section>
+      </main>
     </div>
   );
+}
+
+/* ---------- Components ---------- */
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false); // default closed (your preference)
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "transparent",
+          border: "none",
+          color: COLORS.text,
+          cursor: "pointer",
+          padding: "6px 2px",
+          fontWeight: 900,
+        }}
+      >
+        <span>{title}</span>
+        <span style={{ color: COLORS.muted, fontSize: 12 }}>{open ? "–" : "+"}</span>
+      </button>
+
+      {open && <div style={{ marginTop: 6 }}>{children}</div>}
+
+      <div style={{ height: 1, background: COLORS.border, marginTop: 10 }} />
+    </div>
+  );
+}
+
+function CheckRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: COLORS.text }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span style={{ fontWeight: 800 }}>{label}</span>
+    </label>
+  );
+}
+
+function OptionList({
+  options,
+  selected,
+  onToggle,
+  counts,
+}: {
+  options: string[];
+  selected: string[];
+  onToggle: (v: string) => void;
+  counts: Map<string, number>;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {options.map((opt) => {
+        const active = selected.includes(opt);
+        const count = counts.get(opt) || 0;
+        return (
+          <button
+            key={opt}
+            onClick={() => onToggle(opt)}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: "2px 2px", // tight spacing
+              color: active ? COLORS.text : COLORS.muted,
+              fontSize: 12, // smaller font
+              fontWeight: 800,
+            }}
+          >
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt}</span>
+            <span
+              style={{
+                minWidth: 22,
+                height: 18,
+                padding: "0 6px",
+                borderRadius: 999,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: active ? COLORS.greenSoft : "rgba(255,255,255,0.08)",
+                color: active ? COLORS.text : COLORS.muted,
+                fontSize: 11,
+                fontWeight: 900,
+              }}
+            >
+              {count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatBox({ label, value, compact }: { label: string; value: number; compact: boolean }) {
+  return (
+    <div style={{ textAlign: "right", minWidth: compact ? 44 : 64 }}>
+      <div style={{ fontSize: compact ? 13 : 16, fontWeight: 900, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 10, color: COLORS.muted, marginTop: 2, whiteSpace: "nowrap" }}>{label}</div>
+    </div>
+  );
+}
+
+function countByOption(games: Game[], getter: (g: Game) => string[]) {
+  const m = new Map<string, number>();
+  for (const g of games) {
+    const arr = getter(g) || [];
+    for (const a of arr) {
+      const k = norm(a);
+      if (!k) continue;
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+  }
+  return m;
+}
+
+function selectStyle(): React.CSSProperties {
+  return {
+    width: "100%",
+    height: 38,
+    borderRadius: 12,
+    background: COLORS.card,
+    border: `1px solid ${COLORS.border}`,
+    color: COLORS.text,
+    padding: "0 10px",
+    fontWeight: 800,
+    fontSize: 12,
+    outline: "none",
+  };
 }
