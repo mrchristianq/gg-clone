@@ -21,6 +21,9 @@ type Game = {
   backlog: string;
   completed: string;
   dateCompleted: string;
+
+  // ✅ NEW
+  dateAdded: string;
 };
 
 const COLORS = {
@@ -50,15 +53,13 @@ function splitTags(s: string) {
 }
 
 function pickCover(row: Row) {
-  // ✅ Prefer your cached Drive URL first
+  // ✅ prefer your locally cached URL if present
   const local = norm(row["LocalCoverURL"]);
   if (local) return local;
 
-  // Fallback to IGDB cover url
-  const igdb = norm(row["CoverURL"]);
-  if (igdb) return igdb;
+  const coverUrl = norm(row["CoverURL"]);
+  if (coverUrl) return coverUrl;
 
-  // Fallback to any legacy "Cover" URL if you used that
   const cover = norm(row["Cover"]);
   if (cover.startsWith("http")) return cover;
 
@@ -80,6 +81,8 @@ function toBool(v: string) {
 function toDateNum(s: string) {
   const v = norm(s);
   if (!v) return 0;
+
+  // Works for ISO (yyyy-mm-dd). Also tolerates many other date formats.
   const t = Date.parse(v);
   return Number.isFinite(t) ? t : 0;
 }
@@ -92,6 +95,10 @@ function uniqueSorted(values: string[]) {
 
 function titleKey(title: string) {
   return norm(title).toLowerCase();
+}
+
+function statusIs(g: Game, s: string) {
+  return norm(g.status).toLowerCase() === s.toLowerCase();
 }
 
 function rowToGame(row: Row): Game | null {
@@ -114,10 +121,13 @@ function rowToGame(row: Row): Game | null {
     backlog: norm(row["Backlog"]),
     completed: norm(row["Completed"]),
     dateCompleted: norm(row["DateCompleted"]),
+
+    // ✅ NEW
+    dateAdded: norm(row["DateAdded"]),
   };
 }
 
-// Merge duplicate Title rows into one game
+// ✅ merge duplicate rows (same Title) into one game
 function dedupeByTitle(rows: Game[]) {
   const map = new Map<string, Game>();
 
@@ -130,17 +140,20 @@ function dedupeByTitle(rows: Game[]) {
       continue;
     }
 
+    // cover: prefer existing, else incoming
     const coverUrl = existing.coverUrl || g.coverUrl;
 
+    // union tag arrays
     const platforms = uniqueSorted([...existing.platforms, ...g.platforms]);
     const genres = uniqueSorted([...existing.genres, ...g.genres]);
     const yearPlayed = uniqueSorted([...existing.yearPlayed, ...g.yearPlayed]);
 
+    // booleans: if any true, keep true
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
     const completed =
       toBool(existing.completed) || toBool(g.completed) ? "true" : "";
 
-    // releaseDate: earliest non-empty
+    // releaseDate: keep earliest non-empty (original release)
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
@@ -148,15 +161,22 @@ function dedupeByTitle(rows: Game[]) {
     else if (aRel && bRel)
       releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
-    // dateCompleted: latest non-empty
+    // dateCompleted: keep latest non-empty
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
     if (!aComp && bComp) dateCompleted = g.dateCompleted;
     else if (aComp && bComp)
-      dateCompleted =
-        aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
+      dateCompleted = aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
 
+    // dateAdded: keep earliest non-empty (first time you added it)
+    const aAdd = toDateNum(existing.dateAdded);
+    const bAdd = toDateNum(g.dateAdded);
+    let dateAdded = existing.dateAdded;
+    if (!aAdd && bAdd) dateAdded = g.dateAdded;
+    else if (aAdd && bAdd) dateAdded = aAdd <= bAdd ? existing.dateAdded : g.dateAdded;
+
+    // other single fields: prefer existing non-empty, otherwise take incoming
     const status = existing.status || g.status;
     const ownership = existing.ownership || g.ownership;
     const format = existing.format || g.format;
@@ -171,6 +191,7 @@ function dedupeByTitle(rows: Game[]) {
       completed,
       releaseDate,
       dateCompleted,
+      dateAdded,
       status,
       ownership,
       format,
@@ -180,6 +201,9 @@ function dedupeByTitle(rows: Game[]) {
   return Array.from(map.values());
 }
 
+/**
+ * Base list for counts (respects all filters except the facet you’re counting).
+ */
 function buildBaseForFacet(args: {
   games: Game[];
   q: string;
@@ -191,6 +215,11 @@ function buildBaseForFacet(args: {
   selectedYearsPlayed: string[];
   onlyBacklog: boolean;
   onlyCompleted: boolean;
+
+  // ✅ NEW
+  onlyNowPlaying: boolean;
+  onlyAbandoned: boolean;
+
   exclude:
     | "platforms"
     | "status"
@@ -210,6 +239,8 @@ function buildBaseForFacet(args: {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
     exclude,
   } = args;
 
@@ -221,17 +252,19 @@ function buildBaseForFacet(args: {
     if (onlyBacklog && !toBool(g.backlog)) return false;
     if (onlyCompleted && !toBool(g.completed)) return false;
 
-    if (exclude !== "status" && selectedStatus && g.status !== selectedStatus)
-      return false;
-    if (
-      exclude !== "ownership" &&
-      selectedOwnership &&
-      g.ownership !== selectedOwnership
-    )
-      return false;
-    if (exclude !== "format" && selectedFormat && g.format !== selectedFormat)
-      return false;
+    // ✅ status quick checkboxes (OR between them if both checked)
+    if (onlyNowPlaying || onlyAbandoned) {
+      const ok =
+        (onlyNowPlaying && statusIs(g, "Now Playing")) ||
+        (onlyAbandoned && statusIs(g, "Abandoned"));
+      if (!ok) return false;
+    }
 
+    if (exclude !== "status" && selectedStatus && g.status !== selectedStatus) return false;
+    if (exclude !== "ownership" && selectedOwnership && g.ownership !== selectedOwnership) return false;
+    if (exclude !== "format" && selectedFormat && g.format !== selectedFormat) return false;
+
+    // Platforms = include
     if (exclude !== "platforms" && selectedPlatform) {
       const set = new Set(g.platforms.map((x) => x.toLowerCase()));
       if (!set.has(selectedPlatform.toLowerCase())) return false;
@@ -411,21 +444,8 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                  opacity: c === 0 ? 0.55 : 1,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -476,21 +496,8 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                  opacity: c === 0 ? 0.55 : 1,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -549,6 +556,7 @@ function CheckboxRow({
         color: COLORS.text,
         userSelect: "none",
         cursor: "pointer",
+        whiteSpace: "nowrap",
       }}
     >
       <input
@@ -568,7 +576,7 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tileSize, setTileSize] = useState(100);
+  const [tileSize, setTileSize] = useState(150);
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -582,10 +590,14 @@ export default function HomePage() {
   const [onlyBacklog, setOnlyBacklog] = useState(false);
   const [onlyCompleted, setOnlyCompleted] = useState(false);
 
-  // ✅ Default sort = release date (newest first)
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted">(
-    "releaseDate"
-  );
+  // ✅ NEW status checkboxes
+  const [onlyNowPlaying, setOnlyNowPlaying] = useState(false);
+  const [onlyAbandoned, setOnlyAbandoned] = useState(false);
+
+  // ✅ default sort = Release Date (newest first)
+  const [sortBy, setSortBy] = useState<
+    "title" | "releaseDate" | "dateCompleted" | "dateAdded"
+  >("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -595,7 +607,6 @@ export default function HomePage() {
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
 
-  // ✅ mobile sidebar open/close
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
@@ -635,6 +646,8 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
+      onlyNowPlaying,
+      onlyAbandoned,
       exclude: "platforms",
     });
     return countByTagList(base, (g) => g.platforms);
@@ -649,6 +662,8 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
   ]);
 
   const statusCounts = useMemo(() => {
@@ -663,6 +678,8 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
+      onlyNowPlaying,
+      onlyAbandoned,
       exclude: "status",
     });
     return countByKey(base, (g) => g.status);
@@ -677,6 +694,8 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
   ]);
 
   const ownershipCounts = useMemo(() => {
@@ -691,6 +710,8 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
+      onlyNowPlaying,
+      onlyAbandoned,
       exclude: "ownership",
     });
     return countByKey(base, (g) => g.ownership);
@@ -705,6 +726,8 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
   ]);
 
   const formatCounts = useMemo(() => {
@@ -719,6 +742,8 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
+      onlyNowPlaying,
+      onlyAbandoned,
       exclude: "format",
     });
     return countByKey(base, (g) => g.format);
@@ -733,6 +758,8 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
   ]);
 
   const yearsPlayedCounts = useMemo(() => {
@@ -747,6 +774,8 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
+      onlyNowPlaying,
+      onlyAbandoned,
       exclude: "yearsPlayed",
     });
     return countByTagList(base, (g) => g.yearPlayed);
@@ -761,6 +790,8 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
   ]);
 
   const genreCounts = useMemo(() => {
@@ -775,6 +806,8 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
+      onlyNowPlaying,
+      onlyAbandoned,
       exclude: "genres",
     });
     return countByTagList(base, (g) => g.genres);
@@ -789,6 +822,8 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
   ]);
 
   const filtered = useMemo(() => {
@@ -799,6 +834,14 @@ export default function HomePage() {
 
       if (onlyBacklog && !toBool(g.backlog)) return false;
       if (onlyCompleted && !toBool(g.completed)) return false;
+
+      // ✅ status quick checkboxes (OR between them)
+      if (onlyNowPlaying || onlyAbandoned) {
+        const ok =
+          (onlyNowPlaying && statusIs(g, "Now Playing")) ||
+          (onlyAbandoned && statusIs(g, "Abandoned"));
+        if (!ok) return false;
+      }
 
       if (selectedStatus && g.status !== selectedStatus) return false;
       if (selectedOwnership && g.ownership !== selectedOwnership) return false;
@@ -835,6 +878,8 @@ export default function HomePage() {
         return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
       if (sortBy === "dateCompleted")
         return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateAdded")
+        return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
   }, [
@@ -848,6 +893,8 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
     sortBy,
     sortDir,
   ]);
@@ -874,6 +921,8 @@ export default function HomePage() {
     setSelectedFormat("");
     setOnlyBacklog(false);
     setOnlyCompleted(false);
+    setOnlyNowPlaying(false);
+    setOnlyAbandoned(false);
   }
 
   const headerAvatarUrl =
@@ -895,10 +944,8 @@ export default function HomePage() {
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
       <style>{`
-        /* Hide scrollbar (desktop too) */
         aside::-webkit-scrollbar { display: none; }
 
-        /* Mobile behavior: slide-in sidebar + overlay + top bar */
         @media (max-width: 900px) {
           .sidebar {
             position: fixed !important;
@@ -926,20 +973,16 @@ export default function HomePage() {
             padding: 12px 18px;
             background: ${COLORS.bg};
             border-bottom: 1px solid ${COLORS.border};
-            margin: -18px -18px 14px -18px; /* cancel main padding on top */
+            margin: -18px -18px 14px -18px;
           }
           .mobileOnly { display: block !important; }
-          .desktopOnly { display: none !important; }
         }
 
-        /* Default (desktop): hide mobile-only bits */
         .mobileOnly { display: none; }
       `}</style>
 
-      {/* Overlay for mobile */}
       {filtersOpen && <div className="overlay" onClick={() => setFiltersOpen(false)} />}
 
-      {/* Sidebar */}
       <aside
         className={`sidebar ${filtersOpen ? "open" : ""}`}
         style={sidebarStyle}
@@ -954,7 +997,6 @@ export default function HomePage() {
             marginBottom: 12,
           }}
         >
-          {/* Mobile close button */}
           <button
             className="mobileOnly"
             onClick={() => setFiltersOpen(false)}
@@ -1011,28 +1053,37 @@ export default function HomePage() {
               <SmallSelect
                 value={sortBy}
                 onChange={(v) =>
-                  setSortBy(v as "title" | "releaseDate" | "dateCompleted")
+                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")
                 }
               >
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
+                <option value="dateAdded">Date Added</option>
                 <option value="dateCompleted">Date Completed</option>
               </SmallSelect>
 
-              <SmallSelect
-                value={sortDir}
-                onChange={(v) => setSortDir(v as "asc" | "desc")}
-              >
+              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as "asc" | "desc")}>
                 <option value="asc">Asc</option>
                 <option value="desc">Desc</option>
               </SmallSelect>
             </div>
           </div>
 
-          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>FILTERS</div>
-            <CheckboxRow label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
-            <CheckboxRow label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
+          {/* ✅ FILTER CHECKBOXES (layout exactly as requested) */}
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 6 }}>
+              FILTERS
+            </div>
+
+            <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 6 }}>
+              <CheckboxRow label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
+              <CheckboxRow label="Now Playing" checked={onlyNowPlaying} onChange={setOnlyNowPlaying} />
+            </div>
+
+            <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+              <CheckboxRow label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
+              <CheckboxRow label="Abandoned" checked={onlyAbandoned} onChange={setOnlyAbandoned} />
+            </div>
           </div>
 
           <div style={{ marginTop: 12 }}>
@@ -1050,57 +1101,27 @@ export default function HomePage() {
         </div>
 
         <CollapsibleSection title="Platform" open={openPlatform} setOpen={setOpenPlatform}>
-          <FacetRowsSingle
-            options={platforms}
-            counts={platformCounts}
-            selected={selectedPlatform}
-            onSelect={setSelectedPlatform}
-          />
+          <FacetRowsSingle options={platforms} counts={platformCounts} selected={selectedPlatform} onSelect={setSelectedPlatform} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Status" open={openStatus} setOpen={setOpenStatus}>
-          <FacetRowsSingle
-            options={statuses}
-            counts={statusCounts}
-            selected={selectedStatus}
-            onSelect={setSelectedStatus}
-          />
+          <FacetRowsSingle options={statuses} counts={statusCounts} selected={selectedStatus} onSelect={setSelectedStatus} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle
-            options={ownerships}
-            counts={ownershipCounts}
-            selected={selectedOwnership}
-            onSelect={setSelectedOwnership}
-          />
+          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
-          <FacetRowsSingle
-            options={formats}
-            counts={formatCounts}
-            selected={selectedFormat}
-            onSelect={setSelectedFormat}
-          />
+          <FacetRowsSingle options={formats} counts={formatCounts} selected={selectedFormat} onSelect={setSelectedFormat} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti
-            options={allYearsPlayed}
-            counts={yearsPlayedCounts}
-            selected={selectedYearsPlayed}
-            onToggle={toggleYearPlayed}
-          />
+          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti
-            options={allGenres}
-            counts={genreCounts}
-            selected={selectedGenres}
-            onToggle={toggleGenre}
-          />
+          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
         </CollapsibleSection>
 
         <button
@@ -1126,9 +1147,7 @@ export default function HomePage() {
         </div>
       </aside>
 
-      {/* Main grid */}
       <main style={{ flex: 1, padding: 18 }}>
-        {/* Mobile top bar */}
         <div className="mobileTopbar mobileOnly">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <button
