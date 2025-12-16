@@ -1,526 +1,434 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 
 type Row = Record<string, string>;
 
 type Game = {
-  igdbId: string;
   title: string;
   coverUrl: string;
 
+  platform: string; // some sheets have single Platform
   platforms: string[];
-  genres: string[];
-  yearPlayed: string[];
 
   status: string;
   ownership: string;
   format: string;
 
+  genres: string[];
+  yearPlayed: string[];
+
   releaseDate: string;
   dateAdded: string;
 
-  backlog: boolean;
-  completed: boolean;
+  backlog: string;
+  completed: string;
 
-  igdbRating: number | null;
-  myRating: number | null;
-
-  customOrder: number | null; // from sheet
+  igdbId: string;
 };
 
 const CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSqSRFtUg55P7DGs-XZv01eeIzBar_9vbux8gYtQNJRbKFF4wnfnb5tRnRVStHGTAPzbhk_FHm87CdT/pub?gid=1501557654&single=true&output=csv";
 
-const STORAGE_KEYS = {
-  coverSize: "ggclone_coverSize_v1",
-  sort: "ggclone_sort_v1",
-  tab: "ggclone_tab_v1",
-  customOrder: "ggclone_customOrder_v2", // array of IGDB_IDs in order
-};
-
+// ---------- styling ----------
 const COLORS = {
-  bg: "#0b0e12",
-  panel: "#0f141b",
-  card: "#121a24",
-  text: "#e8eef7",
-  muted: "rgba(232,238,247,0.65)",
-  border: "rgba(255,255,255,0.10)",
-  green: "#22c55e",
+  bg: "#0b0d10",
+  panel: "#0f1217",
+  card: "#10141b",
+  border: "rgba(255,255,255,0.08)",
+  text: "rgba(255,255,255,0.92)",
+  muted: "rgba(255,255,255,0.65)",
+  faint: "rgba(255,255,255,0.45)",
+  green: "#27e08a",
 };
 
-function splitTags(v: string) {
-  return String(v || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+function toBool(v: string) {
+  const s = String(v || "").trim().toLowerCase();
+  return s === "true" || s === "yes" || s === "1" || s === "y" || s === "checked";
 }
 
-function norm(v: any) {
+function norm(v: string) {
   return String(v ?? "").trim();
 }
 
+function splitTags(v: string) {
+  const s = norm(v);
+  if (!s) return [];
+  return s
+    .split(/[;,|]/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function titleKey(t: string) {
+  return norm(t).toLowerCase();
+}
+
 function parseDateMs(s: string) {
-  // expects yyyy-mm-dd but can tolerate other Date.parse-able strings
-  const t = Date.parse(s);
-  return Number.isFinite(t) ? t : NaN;
+  // expects yyyy-mm-dd mostly; Date() will handle some variants
+  const d = new Date(s);
+  const ms = d.getTime();
+  return Number.isFinite(ms) ? ms : 0;
 }
 
-function toBool(v: any) {
-  const s = String(v ?? "").trim().toLowerCase();
-  return s === "true" || s === "yes" || s === "1" || s === "y";
+function pickCover(row: Row) {
+  // Prefer CoverURL; keep your old fallback if you had CoverURL vs CoverURL column
+  return norm(row["CoverURL"] || row["CoverUrl"] || row["Cover"] || row["Cover URL"]);
 }
 
-function safeNum(v: any) {
-  const n = Number(String(v ?? "").trim());
-  return Number.isFinite(n) ? n : null;
-}
+function rowToGame(row: Row): Game {
+  const title = norm(row["Title"] || row["Name"] || "");
+  const coverUrl = pickCover(row);
 
-function getLS<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function setLS(key: string, value: any) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
-}
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function titleKey(s: string) {
-  return (s || "").trim().toLowerCase();
-}
-
-function rowToGame(r: Row): Game | null {
-  const igdbId = norm(r["IGDB_ID"]);
-  const title = norm(r["Title"]) || norm(r["Name"]);
-  if (!igdbId || !title) return null;
-
-  const coverUrl = norm(r["CoverURL"]) || norm(r["CoverUrl"]) || norm(r["Cover"]);
-
-  const status = norm(r["Status"]);
-  const ownership = norm(r["Ownership"]);
-  const format = norm(r["Format"]);
-
-  const releaseDate = norm(r["ReleaseDate"]) || norm(r["Release Date"]);
-  const dateAdded = norm(r["DateAdded"]) || norm(r["Date Added"]);
-
-  const platforms = splitTags(r["Platforms"] || r["Platform"]);
-  const genres = splitTags(r["Genres"]);
-  const yearPlayed = splitTags(r["YearPlayed"] || r["Year Played"]);
-
-  const backlog = toBool(r["Backlog"]);
-  const completed = toBool(r["Completed"]);
-
-  const igdbRating =
-    safeNum(r["IGDB Rating"]) ?? safeNum(r["IGDB_Rating"]) ?? safeNum(r["Rating"]);
-  const myRating = safeNum(r["My Rating"]) ?? safeNum(r["MyRating"]);
-
-  const customOrder = safeNum(r["CustomOrder"]);
+  const platforms = splitTags(row["Platforms"] || "");
+  const platform = norm(row["Platform"] || "");
 
   return {
-    igdbId,
     title,
     coverUrl,
+
+    platform,
     platforms,
-    genres,
-    yearPlayed,
-    status,
-    ownership,
-    format,
-    releaseDate,
-    dateAdded,
-    backlog,
-    completed,
-    igdbRating,
-    myRating,
-    customOrder,
+
+    status: norm(row["Status"]),
+    ownership: norm(row["Ownership"]),
+    format: norm(row["Format"]),
+
+    genres: splitTags(row["Genres"]),
+    yearPlayed: splitTags(row["YearPlayed"]),
+
+    releaseDate: norm(row["ReleaseDate"] || row["Release Date"]),
+    dateAdded: norm(row["DateAdded"] || row["Date Added"]),
+
+    backlog: norm(row["Backlog"]),
+    completed: norm(row["Completed"]),
+
+    igdbId: norm(row["IGDB_ID"] || row["IGDB ID"]),
   };
 }
 
-function dedupeByIgdbId(games: Game[]) {
-  // Keep first occurrence; merge tag-ish fields
-  const map = new Map<string, Game>();
+// Dedupe by IGDB_ID if possible; else Title
+function dedupeGames(games: Game[]): Game[] {
+  const byId = new Map<string, Game>();
+  const byTitle = new Map<string, Game>();
+
   for (const g of games) {
-    if (!map.has(g.igdbId)) {
-      map.set(g.igdbId, g);
+    const id = norm(g.igdbId);
+    if (id) {
+      if (!byId.has(id)) byId.set(id, g);
       continue;
     }
-    const existing = map.get(g.igdbId)!;
-    const mergeUniq = (a: string[], b: string[]) =>
-      Array.from(new Set([...(a || []), ...(b || [])])).filter(Boolean);
-
-    map.set(g.igdbId, {
-      ...existing,
-      // prefer filled values
-      coverUrl: existing.coverUrl || g.coverUrl,
-      releaseDate: existing.releaseDate || g.releaseDate,
-      dateAdded: existing.dateAdded || g.dateAdded,
-      status: existing.status || g.status,
-      ownership: existing.ownership || g.ownership,
-      format: existing.format || g.format,
-      igdbRating: existing.igdbRating ?? g.igdbRating,
-      myRating: existing.myRating ?? g.myRating,
-      customOrder: existing.customOrder ?? g.customOrder,
-      backlog: existing.backlog || g.backlog,
-      completed: existing.completed || g.completed,
-      platforms: mergeUniq(existing.platforms, g.platforms),
-      genres: mergeUniq(existing.genres, g.genres),
-      yearPlayed: mergeUniq(existing.yearPlayed, g.yearPlayed),
-    });
+    const k = titleKey(g.title);
+    if (!k) continue;
+    if (!byTitle.has(k)) byTitle.set(k, g);
   }
-  return Array.from(map.values());
+
+  // Keep stable-ish order: first all byId in insertion order, then byTitle
+  return [...byId.values(), ...byTitle.values()];
 }
 
-type SortKey = "ReleaseDate" | "Title" | "DateAdded" | "IGDBRating" | "MyRating" | "Custom";
-type TopTab = "Games" | "BacklogQueue" | "Wishlist";
+type ViewMode = "games" | "nowPlaying" | "queued" | "wishlist" | "completed";
 
 export default function Page() {
+  const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [games, setGames] = useState<Game[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [err, setErr] = useState("");
 
-  // UI state
-  const [coverSize, setCoverSize] = useState<number>(100); // default requested
-  const [sortKey, setSortKey] = useState<SortKey>("ReleaseDate");
-  const [tab, setTab] = useState<TopTab>("Games");
+  // cover size default = 100
+  const [coverSize, setCoverSize] = useState(100);
 
-  // Left filters (minimal; keep your existing ones if you had more)
-  const [platformSel, setPlatformSel] = useState<Set<string>>(new Set());
-  const [genreSel, setGenreSel] = useState<Set<string>>(new Set());
-  const [yearSel, setYearSel] = useState<Set<string>>(new Set());
+  // top nav
+  const [view, setView] = useState<ViewMode>("games");
 
-  const [statusSel, setStatusSel] = useState<Set<string>>(new Set());
-  const [ownershipSel, setOwnershipSel] = useState<Set<string>>(new Set());
-  const [formatSel, setFormatSel] = useState<Set<string>>(new Set());
+  // ---- your existing filters (keep as-is, add more if you already have them) ----
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
+  const [selectedOwnership, setSelectedOwnership] = useState<string[]>([]);
+  const [selectedFormat, setSelectedFormat] = useState<string[]>([]);
+  const [selectedYearPlayed, setSelectedYearPlayed] = useState<string[]>([]);
 
-  const [onlyBacklog, setOnlyBacklog] = useState(false);
-  const [onlyCompleted, setOnlyCompleted] = useState(false);
-  const [onlyNowPlaying, setOnlyNowPlaying] = useState(false);
-  const [onlyAbandoned, setOnlyAbandoned] = useState(false);
+  const [filterBacklog, setFilterBacklog] = useState(false);
+  const [filterCompleted, setFilterCompleted] = useState(false);
 
-  // Custom order (localStorage)
-  const [customOrderIds, setCustomOrderIds] = useState<string[]>([]);
+  // basic sorts (no custom)
+  const [sortKey, setSortKey] = useState<"releaseDate" | "title" | "dateAdded">("releaseDate");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
 
-  // Drag state
-  const dragFromIdRef = useRef<string | null>(null);
-
-  // Load persisted UI settings
-  useEffect(() => {
-    const savedSize = getLS<number>(STORAGE_KEYS.coverSize, 100);
-    setCoverSize(clamp(savedSize, 60, 200));
-
-    const savedSort = getLS<SortKey>(STORAGE_KEYS.sort, "ReleaseDate");
-    setSortKey(savedSort);
-
-    const savedTab = getLS<TopTab>(STORAGE_KEYS.tab, "Games");
-    setTab(savedTab);
-
-    const savedCustom = getLS<string[]>(STORAGE_KEYS.customOrder, []);
-    setCustomOrderIds(Array.isArray(savedCustom) ? savedCustom : []);
-  }, []);
-
-  useEffect(() => setLS(STORAGE_KEYS.coverSize, coverSize), [coverSize]);
-  useEffect(() => setLS(STORAGE_KEYS.sort, sortKey), [sortKey]);
-  useEffect(() => setLS(STORAGE_KEYS.tab, tab), [tab]);
-
-  // Fetch CSV
   useEffect(() => {
     let cancelled = false;
-    async function run() {
-      try {
-        setLoading(true);
-        setError(null);
+    setLoading(true);
+    setErr("");
 
-        const res = await fetch(CSV_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error(`CSV fetch failed: ${res.status}`);
+    fetch(CSV_URL, { cache: "no-store" })
+      .then((r) => r.text())
+      .then((text) => {
+        if (cancelled) return;
+        const parsed = Papa.parse<Row>(text, { header: true, skipEmptyLines: true });
+        const data = (parsed.data || []).filter((r) => r && Object.keys(r).length > 0);
+        setRows(data);
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setErr(String(e));
+        setLoading(false);
+      });
 
-        const csvText = await res.text();
-
-        const parsed = Papa.parse<Row>(csvText, {
-          header: true,
-          skipEmptyLines: true,
-          dynamicTyping: false,
-        });
-
-        const rows = (parsed.data || []) as Row[];
-        const mapped = rows
-          .map(rowToGame)
-          .filter(Boolean) as Game[];
-
-        // Deduplicate by IGDB_ID (you asked for this)
-        const deduped = dedupeByIgdbId(mapped);
-
-        if (!cancelled) {
-          setGames(deduped);
-        }
-      } catch (e: any) {
-        if (!cancelled) setError(String(e?.message || e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    run();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Build “initial” custom order list if none exists yet:
-  // Prefer sheet CustomOrder numeric, else fall back to current list order.
-  useEffect(() => {
-    if (!games.length) return;
+  const allGames = useMemo(() => {
+    const games = rows
+      .map(rowToGame)
+      .filter((g) => g.title && g.coverUrl); // keep covers only; change if you want "No cover"
+    return dedupeGames(games);
+  }, [rows]);
 
-    // If we already have a saved custom order, keep it.
-    if (customOrderIds.length) return;
-
-    // If sheet has CustomOrder values, seed from them.
-    const withSheet = games
-      .filter((g) => g.customOrder != null)
-      .sort((a, b) => (a.customOrder! - b.customOrder!))
-      .map((g) => g.igdbId);
-
-    if (withSheet.length) {
-      setCustomOrderIds(withSheet);
-      setLS(STORAGE_KEYS.customOrder, withSheet);
-    } else {
-      // fallback: seed from title
-      const seeded = [...games]
-        .sort((a, b) => a.title.localeCompare(b.title))
-        .map((g) => g.igdbId);
-      setCustomOrderIds(seeded);
-      setLS(STORAGE_KEYS.customOrder, seeded);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [games]);
-
-  // Build filter option lists + counts
-  const facets = useMemo(() => {
-    const countMap = (items: string[]) => {
-      const m = new Map<string, number>();
-      for (const v of items) m.set(v, (m.get(v) || 0) + 1);
-      return Array.from(m.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  // build option lists
+  const optionCounts = useMemo(() => {
+    const counts = {
+      genres: new Map<string, number>(),
+      platforms: new Map<string, number>(),
+      status: new Map<string, number>(),
+      ownership: new Map<string, number>(),
+      format: new Map<string, number>(),
+      yearPlayed: new Map<string, number>(),
     };
 
-    const platforms: string[] = [];
-    const genres: string[] = [];
-    const years: string[] = [];
-    const statuses: string[] = [];
-    const ownerships: string[] = [];
-    const formats: string[] = [];
+    for (const g of allGames) {
+      for (const x of g.genres) counts.genres.set(x, (counts.genres.get(x) || 0) + 1);
 
-    for (const g of games) {
-      g.platforms.forEach((p) => platforms.push(p));
-      g.genres.forEach((x) => genres.push(x));
-      g.yearPlayed.forEach((y) => years.push(y));
-      if (g.status) statuses.push(g.status);
-      if (g.ownership) ownerships.push(g.ownership);
-      if (g.format) formats.push(g.format);
+      const plats = g.platforms.length ? g.platforms : g.platform ? [g.platform] : [];
+      for (const x of plats) counts.platforms.set(x, (counts.platforms.get(x) || 0) + 1);
+
+      if (g.status) counts.status.set(g.status, (counts.status.get(g.status) || 0) + 1);
+      if (g.ownership) counts.ownership.set(g.ownership, (counts.ownership.get(g.ownership) || 0) + 1);
+      if (g.format) counts.format.set(g.format, (counts.format.get(g.format) || 0) + 1);
+
+      for (const x of g.yearPlayed) counts.yearPlayed.set(x, (counts.yearPlayed.get(x) || 0) + 1);
     }
+
+    const toList = (m: Map<string, number>) =>
+      [...m.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => ({ label, count }));
 
     return {
-      platforms: countMap(platforms),
-      genres: countMap(genres),
-      years: countMap(years),
-      statuses: countMap(statuses),
-      ownerships: countMap(ownerships),
-      formats: countMap(formats),
+      genres: toList(counts.genres),
+      platforms: toList(counts.platforms),
+      status: toList(counts.status),
+      ownership: toList(counts.ownership),
+      format: toList(counts.format),
+      yearPlayed: toList(counts.yearPlayed).sort((a, b) => Number(b.label) - Number(a.label)),
     };
-  }, [games]);
+  }, [allGames]);
 
-  // Top-right stats
-  const stats = useMemo(() => {
-    const total = games.length;
-    const queued = games.filter((g) => g.status.toLowerCase() === "queued").length;
-    const wishlist = games.filter((g) => g.ownership.toLowerCase() === "wishlist").length;
+  // Apply top-nav view filters FIRST
+  const viewFiltered = useMemo(() => {
+    return allGames.filter((g) => {
+      if (view === "games") return true;
+      if (view === "nowPlaying") return norm(g.status).toLowerCase() === "now playing";
+      if (view === "queued") return norm(g.status).toLowerCase() === "queued";
+      if (view === "wishlist") return norm(g.ownership).toLowerCase() === "wishlist";
+      if (view === "completed") {
+        const statusCompleted = norm(g.status).toLowerCase() === "completed";
+        const completedFlag = toBool(g.completed);
+        return statusCompleted || completedFlag;
+      }
+      return true;
+    });
+  }, [allGames, view]);
 
-    const currentYear = new Date().getFullYear();
-    const playedThisYear = games.filter((g) => g.yearPlayed.includes(String(currentYear))).length;
-
-    return { total, queued, wishlist, playedThisYear, currentYear };
-  }, [games]);
-
-  // Apply tab (Games / BacklogQueue / Wishlist)
-  const tabFiltered = useMemo(() => {
-    if (tab === "BacklogQueue") {
-      return games.filter((g) => g.status.toLowerCase() === "queued");
-    }
-    if (tab === "Wishlist") {
-      return games.filter((g) => g.ownership.toLowerCase() === "wishlist");
-    }
-    return games;
-  }, [games, tab]);
-
-  // Apply left filters
+  // Apply left-panel filters
   const filtered = useMemo(() => {
-    let list = tabFiltered;
+    return viewFiltered.filter((g) => {
+      if (filterBacklog && !toBool(g.backlog)) return false;
+      if (filterCompleted && !toBool(g.completed) && norm(g.status).toLowerCase() !== "completed") return false;
 
-    const hasSel = (s: Set<string>) => s && s.size > 0;
-    const matchAny = (values: string[], sel: Set<string>) => values.some((v) => sel.has(v));
+      if (selectedGenres.length) {
+        const set = new Set(g.genres.map((x) => x.toLowerCase()));
+        if (!selectedGenres.some((x) => set.has(x.toLowerCase()))) return false;
+      }
 
-    if (hasSel(platformSel)) list = list.filter((g) => matchAny(g.platforms, platformSel));
-    if (hasSel(genreSel)) list = list.filter((g) => matchAny(g.genres, genreSel));
-    if (hasSel(yearSel)) list = list.filter((g) => matchAny(g.yearPlayed, yearSel));
+      if (selectedPlatforms.length) {
+        const plats = g.platforms.length ? g.platforms : g.platform ? [g.platform] : [];
+        const set = new Set(plats.map((x) => x.toLowerCase()));
+        if (!selectedPlatforms.some((x) => set.has(x.toLowerCase()))) return false;
+      }
 
-    if (hasSel(statusSel)) list = list.filter((g) => statusSel.has(g.status));
-    if (hasSel(ownershipSel)) list = list.filter((g) => ownershipSel.has(g.ownership));
-    if (hasSel(formatSel)) list = list.filter((g) => formatSel.has(g.format));
+      if (selectedStatus.length) {
+        if (!selectedStatus.some((x) => x.toLowerCase() === g.status.toLowerCase())) return false;
+      }
 
-    // checkbox filters
-    if (onlyBacklog) list = list.filter((g) => g.backlog);
-    if (onlyCompleted) list = list.filter((g) => g.completed);
-    if (onlyNowPlaying) list = list.filter((g) => g.status.toLowerCase() === "now playing");
-    if (onlyAbandoned) list = list.filter((g) => g.status.toLowerCase() === "abandoned");
+      if (selectedOwnership.length) {
+        if (!selectedOwnership.some((x) => x.toLowerCase() === g.ownership.toLowerCase())) return false;
+      }
 
-    return list;
+      if (selectedFormat.length) {
+        if (!selectedFormat.some((x) => x.toLowerCase() === g.format.toLowerCase())) return false;
+      }
+
+      if (selectedYearPlayed.length) {
+        const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
+        if (!selectedYearPlayed.some((x) => set.has(x.toLowerCase()))) return false;
+      }
+
+      return true;
+    });
   }, [
-    tabFiltered,
-    platformSel,
-    genreSel,
-    yearSel,
-    statusSel,
-    ownershipSel,
-    formatSel,
-    onlyBacklog,
-    onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
+    viewFiltered,
+    filterBacklog,
+    filterCompleted,
+    selectedGenres,
+    selectedPlatforms,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedYearPlayed,
   ]);
 
-  // Sorting
   const sorted = useMemo(() => {
-    const list = [...filtered];
+    const arr = [...filtered];
+    const dir = sortDir === "desc" ? -1 : 1;
 
-    if (sortKey === "Custom") {
-      // Use customOrderIds; anything missing goes to end (stable)
-      const pos = new Map<string, number>();
-      customOrderIds.forEach((id, i) => pos.set(id, i));
-      list.sort((a, b) => {
-        const pa = pos.has(a.igdbId) ? pos.get(a.igdbId)! : Number.MAX_SAFE_INTEGER;
-        const pb = pos.has(b.igdbId) ? pos.get(b.igdbId)! : Number.MAX_SAFE_INTEGER;
-        if (pa !== pb) return pa - pb;
-        return a.title.localeCompare(b.title);
-      });
-      return list;
-    }
-
-    if (sortKey === "Title") {
-      list.sort((a, b) => a.title.localeCompare(b.title));
-      return list;
-    }
-
-    if (sortKey === "ReleaseDate") {
-      list.sort((a, b) => {
-        const da = parseDateMs(a.releaseDate);
-        const db = parseDateMs(b.releaseDate);
-        if (Number.isNaN(da) && Number.isNaN(db)) return a.title.localeCompare(b.title);
-        if (Number.isNaN(da)) return 1;
-        if (Number.isNaN(db)) return -1;
-        return db - da;
-      });
-      return list;
-    }
-
-    if (sortKey === "DateAdded") {
-      list.sort((a, b) => {
-        const da = parseDateMs(a.dateAdded);
-        const db = parseDateMs(b.dateAdded);
-        if (Number.isNaN(da) && Number.isNaN(db)) return a.title.localeCompare(b.title);
-        if (Number.isNaN(da)) return 1;
-        if (Number.isNaN(db)) return -1;
-        return db - da;
-      });
-      return list;
-    }
-
-    if (sortKey === "IGDBRating") {
-      list.sort((a, b) => (b.igdbRating ?? -1) - (a.igdbRating ?? -1));
-      return list;
-    }
-
-    if (sortKey === "MyRating") {
-      list.sort((a, b) => (b.myRating ?? -1) - (a.myRating ?? -1));
-      return list;
-    }
-
-    return list;
-  }, [filtered, sortKey, customOrderIds]);
-
-  // Drag-and-drop reorder
-  function onDragStart(id: string) {
-    dragFromIdRef.current = id;
-    // If user starts dragging, automatically switch to Custom
-    if (sortKey !== "Custom") setSortKey("Custom");
-  }
-
-  function onDropOn(targetId: string) {
-    const fromId = dragFromIdRef.current;
-    dragFromIdRef.current = null;
-    if (!fromId || fromId === targetId) return;
-
-    // Reorder within current visible "sorted" list
-    const visibleIds = sorted.map((g) => g.igdbId);
-
-    const fromIdx = visibleIds.indexOf(fromId);
-    const toIdx = visibleIds.indexOf(targetId);
-    if (fromIdx === -1 || toIdx === -1) return;
-
-    const newVisible = [...visibleIds];
-    newVisible.splice(fromIdx, 1);
-    newVisible.splice(toIdx, 0, fromId);
-
-    // Merge into global customOrderIds:
-    // Keep relative order for items not currently visible.
-    const visibleSet = new Set(visibleIds);
-    const existing = customOrderIds.length ? customOrderIds : games.map((g) => g.igdbId);
-
-    const notVisible = existing.filter((id) => !visibleSet.has(id));
-    const merged = [...newVisible, ...notVisible];
-
-    setCustomOrderIds(merged);
-    setLS(STORAGE_KEYS.customOrder, merged);
-  }
-
-  function toggleSet(setter: React.Dispatch<React.SetStateAction<Set<string>>>, value: string) {
-    setter((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
+    arr.sort((a, b) => {
+      if (sortKey === "title") {
+        return a.title.localeCompare(b.title) * dir;
+      }
+      if (sortKey === "dateAdded") {
+        return (parseDateMs(a.dateAdded) - parseDateMs(b.dateAdded)) * dir;
+      }
+      // releaseDate default
+      return (parseDateMs(a.releaseDate) - parseDateMs(b.releaseDate)) * dir;
     });
+
+    return arr;
+  }, [filtered, sortKey, sortDir]);
+
+  // header stats (you can keep these even if you change later)
+  const stats = useMemo(() => {
+    const total = allGames.length;
+    const queued = allGames.filter((g) => norm(g.status).toLowerCase() === "queued").length;
+    const wishlist = allGames.filter((g) => norm(g.ownership).toLowerCase() === "wishlist").length;
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const playedThisYear = allGames.filter((g) => g.yearPlayed.includes(String(year))).length;
+
+    return { total, queued, wishlist, playedThisYear, year };
+  }, [allGames]);
+
+  function toggleMulti(current: string[], value: string) {
+    const v = value.trim();
+    if (!v) return current;
+    const exists = current.some((x) => x.toLowerCase() === v.toLowerCase());
+    if (exists) return current.filter((x) => x.toLowerCase() !== v.toLowerCase());
+    return [...current, v];
   }
 
-  function clearAllFilters() {
-    setPlatformSel(new Set());
-    setGenreSel(new Set());
-    setYearSel(new Set());
-    setStatusSel(new Set());
-    setOwnershipSel(new Set());
-    setFormatSel(new Set());
-    setOnlyBacklog(false);
-    setOnlyCompleted(false);
-    setOnlyNowPlaying(false);
-    setOnlyAbandoned(false);
+  function OptionList({
+    title,
+    options,
+    selected,
+    onToggle,
+  }: {
+    title: string;
+    options: { label: string; count: number }[];
+    selected: string[];
+    onToggle: (label: string) => void;
+  }) {
+    return (
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, marginBottom: 6 }}>
+          {title.toUpperCase()}
+        </div>
+
+        <div style={{ display: "grid", gap: 4 }}>
+          {options.map((o) => {
+            const active = selected.some((x) => x.toLowerCase() === o.label.toLowerCase());
+            return (
+              <button
+                key={o.label}
+                onClick={() => onToggle(o.label)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  padding: "6px 8px",
+                  borderRadius: 10,
+                  background: active ? "rgba(39,224,138,0.12)" : "transparent",
+                  border: active ? `1px solid rgba(39,224,138,0.35)` : `1px solid ${COLORS.border}`,
+                  color: COLORS.text,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ opacity: active ? 1 : 0.9 }}>{o.label}</span>
+                <span
+                  style={{
+                    minWidth: 28,
+                    textAlign: "center",
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    border: `1px solid ${COLORS.border}`,
+                    color: COLORS.muted,
+                    background: "rgba(255,255,255,0.03)",
+                  }}
+                >
+                  {o.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   }
 
-  function resetCustomOrderToTitle() {
-    const seeded = [...games].sort((a, b) => a.title.localeCompare(b.title)).map((g) => g.igdbId);
-    setCustomOrderIds(seeded);
-    setLS(STORAGE_KEYS.customOrder, seeded);
-    setSortKey("Custom");
-  }
+  const Tab = ({
+    id,
+    label,
+  }: {
+    id: ViewMode;
+    label: string;
+  }) => {
+    const active = view === id;
+    return (
+      <button
+        onClick={() => setView(id)}
+        style={{
+          background: "transparent",
+          border: "none",
+          padding: "10px 8px",
+          cursor: "pointer",
+          color: active ? COLORS.text : COLORS.muted,
+          fontWeight: 900,
+          fontSize: 16, // ✅ bigger
+          position: "relative",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+        <span
+          style={{
+            position: "absolute",
+            left: 8,
+            right: 8,
+            bottom: 2,
+            height: 2,
+            borderRadius: 999,
+            background: active ? COLORS.green : "transparent",
+          }}
+        />
+      </button>
+    );
+  };
 
   return (
     <div
@@ -529,69 +437,95 @@ export default function Page() {
         background: COLORS.bg,
         color: COLORS.text,
         fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
+          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
       }}
     >
-      {/* Top bar */}
-      <div
+      {/* Header */}
+      <header
         style={{
           position: "sticky",
           top: 0,
           zIndex: 20,
-          background: "rgba(11,14,18,0.92)",
+          background: "rgba(11,13,16,0.92)",
+          backdropFilter: "blur(8px)",
           borderBottom: `1px solid ${COLORS.border}`,
-          backdropFilter: "blur(10px)",
         }}
       >
         <div
           style={{
             maxWidth: 1400,
             margin: "0 auto",
-            padding: "14px 16px",
+            padding: "14px 14px 6px",
             display: "flex",
-            gap: 14,
             alignItems: "center",
             justifyContent: "space-between",
-            flexWrap: "wrap",
+            gap: 14,
+            flexWrap: "wrap", // ✅ ensures mobile stays visible
           }}
         >
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 0.2 }}>
-              Chris&apos; Game Library
-            </div>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>
-              {loading ? "Loading…" : error ? `Error: ${error}` : `${games.length} games`}
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-            <NavTab label="Games" active={tab === "Games"} onClick={() => setTab("Games")} />
-            <NavTab
-              label="Backlog Queue"
-              active={tab === "BacklogQueue"}
-              onClick={() => setTab("BacklogQueue")}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img
+              src="https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no"
+              alt="Chris"
+              style={{ width: 72, height: 72, borderRadius: 999, border: `1px solid ${COLORS.border}` }}
             />
-            <NavTab label="Wishlist" active={tab === "Wishlist"} onClick={() => setTab("Wishlist")} />
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.1 }}>Chris&apos; Game Library</div>
+              <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
+                {loading ? "Loading…" : `${allGames.length} games`}
+              </div>
+            </div>
           </div>
 
-          {/* Stats */}
-          <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
-            <StatBox label="Games" value={stats.total} />
-            <StatBox label="Queued" value={stats.queued} />
-            <StatBox label="Wishlist" value={stats.wishlist} />
-            <StatBox label={`Played in ${stats.currentYear}`} value={stats.playedThisYear} />
+          {/* Stats on right (kept minimal) */}
+          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.total}</div>
+              <div style={{ fontSize: 11, color: COLORS.muted }}>Games</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.queued}</div>
+              <div style={{ fontSize: 11, color: COLORS.muted }}>Queued</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.wishlist}</div>
+              <div style={{ fontSize: 11, color: COLORS.muted }}>Wishlist</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.playedThisYear}</div>
+              <div style={{ fontSize: 11, color: COLORS.muted }}>Played in {stats.year}</div>
+            </div>
           </div>
         </div>
-      </div>
 
+        {/* Top nav tabs */}
+        <div
+          style={{
+            maxWidth: 1400,
+            margin: "0 auto",
+            padding: "0 14px 10px",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap", // ✅ show on mobile too
+          }}
+        >
+          <Tab id="games" label="Games" />
+          <Tab id="nowPlaying" label="Now Playing" />
+          <Tab id="queued" label="Queued" />
+          <Tab id="wishlist" label="Wishlist" />
+          <Tab id="completed" label="Completed" />
+        </div>
+      </header>
+
+      {/* Layout */}
       <div
         style={{
           maxWidth: 1400,
           margin: "0 auto",
-          padding: "16px",
+          padding: 14,
           display: "grid",
-          gridTemplateColumns: "320px 1fr",
+          gridTemplateColumns: "290px 1fr",
           gap: 14,
         }}
       >
@@ -601,24 +535,33 @@ export default function Page() {
             background: COLORS.panel,
             border: `1px solid ${COLORS.border}`,
             borderRadius: 16,
-            padding: 14,
+            padding: 12,
             height: "fit-content",
             position: "sticky",
-            top: 84,
+            top: 140,
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-            <div style={{ fontWeight: 900, fontSize: 14 }}>Filters</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ fontWeight: 900 }}>Filters</div>
             <button
-              onClick={clearAllFilters}
+              onClick={() => {
+                setSelectedGenres([]);
+                setSelectedPlatforms([]);
+                setSelectedStatus([]);
+                setSelectedOwnership([]);
+                setSelectedFormat([]);
+                setSelectedYearPlayed([]);
+                setFilterBacklog(false);
+                setFilterCompleted(false);
+              }}
               style={{
-                fontSize: 12,
+                border: `1px solid ${COLORS.border}`,
+                background: "transparent",
+                color: COLORS.muted,
                 padding: "6px 10px",
                 borderRadius: 10,
-                background: COLORS.card,
-                border: `1px solid ${COLORS.border}`,
-                color: COLORS.text,
                 cursor: "pointer",
+                fontSize: 12,
                 fontWeight: 800,
               }}
             >
@@ -626,323 +569,195 @@ export default function Page() {
             </button>
           </div>
 
-          {/* Checkbox row: Backlog / Now Playing */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
-            <CheckboxLine label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
-            <CheckboxLine label="Now Playing" checked={onlyNowPlaying} onChange={setOnlyNowPlaying} />
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, marginBottom: 6 }}>COVER SIZE</div>
+            <input
+              type="range"
+              min={60}
+              max={200}
+              value={coverSize}
+              onChange={(e) => setCoverSize(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+            <div style={{ fontSize: 11, color: COLORS.muted, marginTop: 6 }}>{coverSize}px</div>
           </div>
 
-          {/* Checkbox row: Completed / Abandoned */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-            <CheckboxLine label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
-            <CheckboxLine label="Abandoned" checked={onlyAbandoned} onChange={setOnlyAbandoned} />
-          </div>
-
-          <Section title="Platform" items={facets.platforms} selected={platformSel} onToggle={(v) => toggleSet(setPlatformSel, v)} />
-          <Section title="Genre" items={facets.genres} selected={genreSel} onToggle={(v) => toggleSet(setGenreSel, v)} />
-          <Section title="Year Played" items={facets.years} selected={yearSel} onToggle={(v) => toggleSet(setYearSel, v)} />
-
-          <Section title="Status" items={facets.statuses} selected={statusSel} onToggle={(v) => toggleSet(setStatusSel, v)} />
-          <Section title="Ownership" items={facets.ownerships} selected={ownershipSel} onToggle={(v) => toggleSet(setOwnershipSel, v)} />
-          <Section title="Format" items={facets.formats} selected={formatSel} onToggle={(v) => toggleSet(setFormatSel, v)} />
-
-          <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
-            <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>Sort</div>
-            <select
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
-              style={{
-                width: "100%",
-                padding: "10px 10px",
-                borderRadius: 12,
-                background: COLORS.card,
-                border: `1px solid ${COLORS.border}`,
-                color: COLORS.text,
-                fontWeight: 800,
-              }}
-            >
-              <option value="ReleaseDate">Release Date</option>
-              <option value="DateAdded">Date Added</option>
-              <option value="Title">Title</option>
-              <option value="IGDBRating">IGDB Rating</option>
-              <option value="MyRating">My Rating</option>
-              <option value="Custom">Custom</option>
-            </select>
-
-            <div style={{ marginTop: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                <div style={{ fontSize: 12, fontWeight: 900 }}>Cover Size</div>
-                <div style={{ fontSize: 12, color: COLORS.muted, fontWeight: 800 }}>{coverSize}px</div>
-              </div>
-              <input
-                type="range"
-                min={60}
-                max={200}
-                value={coverSize}
-                onChange={(e) => setCoverSize(Number(e.target.value))}
-                style={{ width: "100%", marginTop: 6 }}
-              />
-            </div>
-
-            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, marginBottom: 6 }}>SORT</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[
+                { id: "releaseDate", label: "Release Date" },
+                { id: "dateAdded", label: "Date Added" },
+                { id: "title", label: "Title" },
+              ].map((o) => (
+                <button
+                  key={o.id}
+                  onClick={() => setSortKey(o.id as any)}
+                  style={{
+                    border: `1px solid ${COLORS.border}`,
+                    background: sortKey === o.id ? "rgba(39,224,138,0.12)" : "transparent",
+                    color: sortKey === o.id ? COLORS.text : COLORS.muted,
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 800,
+                  }}
+                >
+                  {o.label}
+                </button>
+              ))}
               <button
-                onClick={resetCustomOrderToTitle}
+                onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
                 style={{
-                  fontSize: 12,
-                  padding: "8px 10px",
-                  borderRadius: 12,
-                  background: COLORS.card,
                   border: `1px solid ${COLORS.border}`,
-                  color: COLORS.text,
+                  background: "transparent",
+                  color: COLORS.muted,
+                  padding: "6px 10px",
+                  borderRadius: 999,
                   cursor: "pointer",
+                  fontSize: 12,
                   fontWeight: 800,
                 }}
-                title="Reseed custom order from Title"
               >
-                Reset Custom
+                {sortDir === "desc" ? "Desc" : "Asc"}
               </button>
-              <div style={{ fontSize: 12, color: COLORS.muted, lineHeight: 1.35 }}>
-                Tip: drag a cover to reorder (switches to Custom automatically).
-              </div>
             </div>
           </div>
+
+          {/* Backlog / Completed flags */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, marginBottom: 6 }}>FLAGS</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: COLORS.text }}>
+              <input type="checkbox" checked={filterBacklog} onChange={(e) => setFilterBacklog(e.target.checked)} />
+              Backlog
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: COLORS.text, marginTop: 6 }}>
+              <input type="checkbox" checked={filterCompleted} onChange={(e) => setFilterCompleted(e.target.checked)} />
+              Completed
+            </label>
+          </div>
+
+          {/* Multi-select option lists */}
+          <OptionList
+            title="Genres"
+            options={optionCounts.genres}
+            selected={selectedGenres}
+            onToggle={(v) => setSelectedGenres((cur) => toggleMulti(cur, v))}
+          />
+          <OptionList
+            title="Platforms"
+            options={optionCounts.platforms}
+            selected={selectedPlatforms}
+            onToggle={(v) => setSelectedPlatforms((cur) => toggleMulti(cur, v))}
+          />
+          <OptionList
+            title="Status"
+            options={optionCounts.status}
+            selected={selectedStatus}
+            onToggle={(v) => setSelectedStatus((cur) => toggleMulti(cur, v))}
+          />
+          <OptionList
+            title="Ownership"
+            options={optionCounts.ownership}
+            selected={selectedOwnership}
+            onToggle={(v) => setSelectedOwnership((cur) => toggleMulti(cur, v))}
+          />
+          <OptionList
+            title="Format"
+            options={optionCounts.format}
+            selected={selectedFormat}
+            onToggle={(v) => setSelectedFormat((cur) => toggleMulti(cur, v))}
+          />
+          <OptionList
+            title="Year Played"
+            options={optionCounts.yearPlayed}
+            selected={selectedYearPlayed}
+            onToggle={(v) => setSelectedYearPlayed((cur) => toggleMulti(cur, v))}
+          />
         </aside>
 
         {/* Main grid */}
         <main>
-          <div style={{ marginBottom: 10, fontSize: 12, color: COLORS.muted }}>
-            Showing <b style={{ color: COLORS.text }}>{sorted.length}</b> items
-          </div>
+          {err ? (
+            <div
+              style={{
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.panel,
+                borderRadius: 16,
+                padding: 14,
+                color: COLORS.text,
+              }}
+            >
+              Error: {err}
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div style={{ color: COLORS.muted, fontSize: 14 }}>Loading…</div>
+          ) : null}
+
+          {!loading && sorted.length === 0 ? (
+            <div style={{ color: COLORS.muted, fontSize: 14 }}>No games match your filters.</div>
+          ) : null}
 
           <div
             style={{
+              marginTop: 10,
               display: "grid",
-              gridTemplateColumns: `repeat(auto-fill, minmax(${coverSize}px, 1fr))`,
               gap: 10,
-              alignItems: "start",
+              gridTemplateColumns: `repeat(auto-fill, minmax(${coverSize}px, 1fr))`,
             }}
           >
             {sorted.map((g) => (
-              <CoverTile
-                key={g.igdbId}
-                game={g}
-                size={coverSize}
-                onDragStart={() => onDragStart(g.igdbId)}
-                onDropOn={() => onDropOn(g.igdbId)}
-              />
+              <div
+                key={g.igdbId ? `igdb-${g.igdbId}` : `t-${titleKey(g.title)}`}
+                title={g.title}
+                style={{
+                  aspectRatio: "2 / 3",
+                  background: COLORS.card,
+                  borderRadius: 14,
+                  overflow: "hidden",
+                  border: `1px solid ${COLORS.border}`,
+                  boxShadow: "0 18px 40px rgba(0,0,0,.55)",
+                }}
+              >
+                <img
+                  src={g.coverUrl}
+                  alt={g.title}
+                  loading="lazy"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  onError={(e) => {
+                    // fallback: gray block if cover fails
+                    const el = e.currentTarget;
+                    el.style.display = "none";
+                    const parent = el.parentElement;
+                    if (parent && !parent.querySelector(".fallback")) {
+                      const div = document.createElement("div");
+                      div.className = "fallback";
+                      div.style.height = "100%";
+                      div.style.display = "flex";
+                      div.style.alignItems = "center";
+                      div.style.justifyContent = "center";
+                      div.style.color = COLORS.muted;
+                      div.style.fontSize = "12px";
+                      div.textContent = "Cover failed";
+                      parent.appendChild(div);
+                    }
+                  }}
+                />
+              </div>
             ))}
           </div>
         </main>
       </div>
-    </div>
-  );
-}
 
-function NavTab(props: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={props.onClick}
-      style={{
-        background: "transparent",
-        border: "none",
-        color: props.active ? COLORS.text : "rgba(232,238,247,0.72)",
-        fontWeight: 950,
-        fontSize: 16, // bigger per your request
-        cursor: "pointer",
-        padding: "6px 2px",
-        borderBottom: props.active ? `3px solid ${COLORS.green}` : "3px solid transparent",
-      }}
-    >
-      {props.label}
-    </button>
-  );
-}
-
-function StatBox(props: { label: string; value: number }) {
-  return (
-    <div style={{ textAlign: "right", minWidth: 90 }}>
-      <div style={{ fontSize: 18, fontWeight: 950, lineHeight: 1 }}>{props.value}</div>
-      <div style={{ fontSize: 11, color: COLORS.muted, fontWeight: 850, marginTop: 4 }}>{props.label}</div>
-    </div>
-  );
-}
-
-function CheckboxLine(props: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label
-      style={{
-        display: "flex",
-        gap: 8,
-        alignItems: "center",
-        padding: "8px 10px",
-        borderRadius: 12,
-        background: COLORS.card,
-        border: `1px solid ${COLORS.border}`,
-        cursor: "pointer",
-        userSelect: "none",
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={props.checked}
-        onChange={(e) => props.onChange(e.target.checked)}
-        style={{ transform: "translateY(1px)" }}
-      />
-      <span style={{ fontSize: 12, fontWeight: 900 }}>{props.label}</span>
-    </label>
-  );
-}
-
-function Section(props: {
-  title: string;
-  items: Array<[string, number]>;
-  selected: Set<string>;
-  onToggle: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false); // start closed
-  return (
-    <div style={{ marginTop: 12 }}>
-      <button
-        onClick={() => setOpen((s) => !s)}
-        style={{
-          width: "100%",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          border: "none",
-          background: "transparent",
-          color: COLORS.text,
-          padding: "6px 2px",
-          cursor: "pointer",
-          fontWeight: 950,
-          fontSize: 12,
-        }}
-      >
-        <span>{props.title}</span>
-        <span style={{ color: COLORS.muted, fontWeight: 900 }}>{open ? "–" : "+"}</span>
-      </button>
-
-      {open && (
-        <div style={{ marginTop: 6 }}>
-          {props.items.map(([label, count]) => {
-            const active = props.selected.has(label);
-            return (
-              <button
-                key={label}
-                onClick={() => props.onToggle(label)}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "6px 8px", // tighter spacing
-                  borderRadius: 10,
-                  background: active ? "rgba(34,197,94,0.12)" : "transparent",
-                  border: "none", // no lines between
-                  color: COLORS.text,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: active ? 950 : 850,
-                }}
-                title={label}
-              >
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {label}
-                </span>
-                <span
-                  style={{
-                    minWidth: 28,
-                    height: 18,
-                    padding: "0 6px",
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,0.10)",
-                    border: `1px solid ${COLORS.border}`,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 11,
-                    fontWeight: 900,
-                    color: COLORS.text,
-                  }}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CoverTile(props: {
-  game: Game;
-  size: number;
-  onDragStart: () => void;
-  onDropOn: () => void;
-}) {
-  const [failed, setFailed] = useState(false);
-
-  return (
-    <div
-      draggable
-      onDragStart={(e) => {
-        props.onDragStart();
-        // Required for Firefox
-        e.dataTransfer.setData("text/plain", props.game.igdbId);
-        e.dataTransfer.effectAllowed = "move";
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        props.onDropOn();
-      }}
-      style={{
-        aspectRatio: "2 / 3",
-        borderRadius: 14,
-        overflow: "hidden",
-        background: COLORS.card,
-        border: `1px solid ${COLORS.border}`,
-        boxShadow: "0 18px 35px rgba(0,0,0,.55)",
-        cursor: "grab",
-      }}
-      title={props.game.title}
-    >
-      {props.game.coverUrl && !failed ? (
-        <img
-          src={props.game.coverUrl}
-          alt={props.game.title}
-          loading="lazy"
-          onError={() => setFailed(true)}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            display: "block",
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            height: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 10,
-            color: COLORS.muted,
-            fontSize: 12,
-            textAlign: "center",
-            fontWeight: 900,
-          }}
-        >
-          {failed ? "Cover failed" : "No cover"}
-        </div>
-      )}
+      {/* Mobile layout tweak */}
+      <style>{`
+        @media (max-width: 980px) {
+          .layout { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   );
 }
