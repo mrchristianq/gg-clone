@@ -21,9 +21,10 @@ type Game = {
   backlog: string;
   completed: string;
   dateCompleted: string;
-};
 
-type ViewMode = "games" | "backlogQueue" | "wishlist";
+  // optional, if your sheet has it later:
+  dateAdded?: string;
+};
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -38,6 +39,7 @@ const COLORS = {
   rowActive: "rgba(96,165,250,0.14)",
   badgeBg: "rgba(255,255,255,0.06)",
   badgeBorder: "rgba(255,255,255,0.10)",
+  accent: "#22c55e", // green underline
 };
 
 function norm(v: unknown) {
@@ -110,10 +112,12 @@ function rowToGame(row: Row): Game | null {
     backlog: norm(row["Backlog"]),
     completed: norm(row["Completed"]),
     dateCompleted: norm(row["DateCompleted"]),
+
+    dateAdded: norm(row["DateAdded"]),
   };
 }
 
-// ✅ Merge duplicate Title rows into one game (keeps platform/genre/yearPlayed as unions)
+// Merge duplicate Title rows into one game
 function dedupeByTitle(rows: Game[]) {
   const map = new Map<string, Game>();
 
@@ -136,7 +140,7 @@ function dedupeByTitle(rows: Game[]) {
     const completed =
       toBool(existing.completed) || toBool(g.completed) ? "true" : "";
 
-    // releaseDate: keep earliest non-empty
+    // releaseDate: earliest non-empty
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
@@ -144,7 +148,7 @@ function dedupeByTitle(rows: Game[]) {
     else if (aRel && bRel)
       releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
-    // dateCompleted: keep latest non-empty
+    // dateCompleted: latest non-empty
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
@@ -153,7 +157,14 @@ function dedupeByTitle(rows: Game[]) {
       dateCompleted =
         aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
 
-    // keep a non-empty status/ownership/format
+    // dateAdded: earliest non-empty
+    const aAdd = toDateNum(existing.dateAdded || "");
+    const bAdd = toDateNum(g.dateAdded || "");
+    let dateAdded = existing.dateAdded || "";
+    if (!aAdd && bAdd) dateAdded = g.dateAdded || "";
+    else if (aAdd && bAdd)
+      dateAdded = aAdd <= bAdd ? (existing.dateAdded || "") : (g.dateAdded || "");
+
     const status = existing.status || g.status;
     const ownership = existing.ownership || g.ownership;
     const format = existing.format || g.format;
@@ -168,6 +179,7 @@ function dedupeByTitle(rows: Game[]) {
       completed,
       releaseDate,
       dateCompleted,
+      dateAdded,
       status,
       ownership,
       format,
@@ -177,6 +189,9 @@ function dedupeByTitle(rows: Game[]) {
   return Array.from(map.values());
 }
 
+/**
+ * Base list for counts (respects all filters except the facet you’re counting).
+ */
 function buildBaseForFacet(args: {
   games: Game[];
   q: string;
@@ -188,7 +203,9 @@ function buildBaseForFacet(args: {
   selectedYearsPlayed: string[];
   onlyBacklog: boolean;
   onlyCompleted: boolean;
-  viewMode: ViewMode;
+  onlyNowPlaying: boolean;
+  onlyAbandoned: boolean;
+  view: "games" | "queue" | "wishlist";
   exclude:
     | "platforms"
     | "status"
@@ -208,32 +225,30 @@ function buildBaseForFacet(args: {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
-    viewMode,
+    onlyNowPlaying,
+    onlyAbandoned,
+    view,
     exclude,
   } = args;
 
   const query = q.trim().toLowerCase();
 
   return games.filter((g) => {
-    // ✅ top tabs filter
-    if (viewMode === "backlogQueue" && g.status !== "Queued") return false;
-    if (viewMode === "wishlist" && g.ownership !== "Wishlist") return false;
+    // top tabs view filter
+    if (view === "queue" && g.status.toLowerCase() !== "queued") return false;
+    if (view === "wishlist" && g.ownership.toLowerCase() !== "wishlist") return false;
 
     if (query && !g.title.toLowerCase().includes(query)) return false;
 
     if (onlyBacklog && !toBool(g.backlog)) return false;
     if (onlyCompleted && !toBool(g.completed)) return false;
 
-    if (exclude !== "status" && selectedStatus && g.status !== selectedStatus)
-      return false;
-    if (
-      exclude !== "ownership" &&
-      selectedOwnership &&
-      g.ownership !== selectedOwnership
-    )
-      return false;
-    if (exclude !== "format" && selectedFormat && g.format !== selectedFormat)
-      return false;
+    if (onlyNowPlaying && g.status.toLowerCase() !== "now playing") return false;
+    if (onlyAbandoned && g.status.toLowerCase() !== "abandoned") return false;
+
+    if (exclude !== "status" && selectedStatus && g.status !== selectedStatus) return false;
+    if (exclude !== "ownership" && selectedOwnership && g.ownership !== selectedOwnership) return false;
+    if (exclude !== "format" && selectedFormat && g.format !== selectedFormat) return false;
 
     if (exclude !== "platforms" && selectedPlatform) {
       const set = new Set(g.platforms.map((x) => x.toLowerCase()));
@@ -414,21 +429,8 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                  opacity: c === 0 ? 0.55 : 1,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -479,21 +481,8 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                  opacity: c === 0 ? 0.55 : 1,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -565,46 +554,48 @@ function CheckboxRow({
   );
 }
 
-function TopTabs({
-  viewMode,
-  setViewMode,
-  counts,
+function TabButton({
+  active,
+  label,
+  onClick,
 }: {
-  viewMode: ViewMode;
-  setViewMode: (v: ViewMode) => void;
-  counts: { games: number; backlogQueue: number; wishlist: number };
+  active: boolean;
+  label: string;
+  onClick: () => void;
 }) {
-  const btn = (active: boolean): React.CSSProperties => ({
-    border: `1px solid ${COLORS.border}`,
-    background: active ? COLORS.rowActive : COLORS.card,
-    color: COLORS.text,
-    borderRadius: 999,
-    padding: "8px 12px",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 12,
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-  });
-
   return (
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-      <button style={btn(viewMode === "games")} onClick={() => setViewMode("games")}>
-        Games <CountBadge n={counts.games} />
-      </button>
-      <button
-        style={btn(viewMode === "backlogQueue")}
-        onClick={() => setViewMode("backlogQueue")}
-      >
-        Backlog Queue <CountBadge n={counts.backlogQueue} />
-      </button>
-      <button
-        style={btn(viewMode === "wishlist")}
-        onClick={() => setViewMode("wishlist")}
-      >
-        Wishlist <CountBadge n={counts.wishlist} />
-      </button>
+    <button
+      onClick={onClick}
+      style={{
+        border: "none",
+        background: "transparent",
+        color: active ? COLORS.text : COLORS.muted,
+        cursor: "pointer",
+        padding: "10px 2px",
+        fontSize: 18,
+        fontWeight: 800,
+        letterSpacing: "-0.01em",
+        borderBottom: active ? `3px solid ${COLORS.accent}` : "3px solid transparent",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function Stat({
+  value,
+  label,
+}: {
+  value: number;
+  label: string;
+}) {
+  return (
+    <div style={{ textAlign: "center", minWidth: 84 }}>
+      <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginTop: 2, textTransform: "uppercase" }}>
+        {label}
+      </div>
     </div>
   );
 }
@@ -615,9 +606,9 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("games");
+  // ✅ default cover size to 100
+  const [tileSize, setTileSize] = useState(100);
 
-  const [tileSize, setTileSize] = useState(150);
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -631,9 +622,17 @@ export default function HomePage() {
   const [onlyBacklog, setOnlyBacklog] = useState(false);
   const [onlyCompleted, setOnlyCompleted] = useState(false);
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted">(
-    "releaseDate"
-  );
+  // ✅ new checkbox filters
+  const [onlyNowPlaying, setOnlyNowPlaying] = useState(false);
+  const [onlyAbandoned, setOnlyAbandoned] = useState(false);
+
+  // ✅ top tabs
+  const [view, setView] = useState<"games" | "queue" | "wishlist">("games");
+
+  // Default sort = release date (newest first)
+  const [sortBy, setSortBy] = useState<
+    "title" | "releaseDate" | "dateCompleted" | "dateAdded"
+  >("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -658,6 +657,7 @@ export default function HomePage() {
 
       // ✅ dedupe here
       setGames(dedupeByTitle(mapped));
+
       setLoading(false);
     }
 
@@ -671,12 +671,21 @@ export default function HomePage() {
   const allGenres = useMemo(() => uniqueSorted(games.flatMap((g) => g.genres)), [games]);
   const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
 
-  const tabCounts = useMemo(() => {
-    const gamesCount = games.length;
-    const backlogQueue = games.filter((g) => g.status === "Queued").length;
-    const wishlist = games.filter((g) => g.ownership === "Wishlist").length;
-    return { games: gamesCount, backlogQueue, wishlist };
-  }, [games]);
+  // Stats (like screenshot)
+  const currentYear = String(new Date().getFullYear());
+  const totalGames = games.length;
+  const queuedCount = useMemo(
+    () => games.filter((g) => g.status.toLowerCase() === "queued").length,
+    [games]
+  );
+  const wishlistCount = useMemo(
+    () => games.filter((g) => g.ownership.toLowerCase() === "wishlist").length,
+    [games]
+  );
+  const playedThisYearCount = useMemo(() => {
+    const y = currentYear.toLowerCase();
+    return games.filter((g) => g.yearPlayed.some((v) => v.toLowerCase() === y)).length;
+  }, [games, currentYear]);
 
   const platformCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -690,22 +699,15 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      viewMode,
+      onlyNowPlaying,
+      onlyAbandoned,
+      view,
       exclude: "platforms",
     });
     return countByTagList(base, (g) => g.platforms);
   }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    onlyBacklog,
-    onlyCompleted,
-    viewMode,
+    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
   ]);
 
   const statusCounts = useMemo(() => {
@@ -720,22 +722,15 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      viewMode,
+      onlyNowPlaying,
+      onlyAbandoned,
+      view,
       exclude: "status",
     });
     return countByKey(base, (g) => g.status);
   }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    onlyBacklog,
-    onlyCompleted,
-    viewMode,
+    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
   ]);
 
   const ownershipCounts = useMemo(() => {
@@ -750,22 +745,15 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      viewMode,
+      onlyNowPlaying,
+      onlyAbandoned,
+      view,
       exclude: "ownership",
     });
     return countByKey(base, (g) => g.ownership);
   }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    onlyBacklog,
-    onlyCompleted,
-    viewMode,
+    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
   ]);
 
   const formatCounts = useMemo(() => {
@@ -780,22 +768,15 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      viewMode,
+      onlyNowPlaying,
+      onlyAbandoned,
+      view,
       exclude: "format",
     });
     return countByKey(base, (g) => g.format);
   }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    onlyBacklog,
-    onlyCompleted,
-    viewMode,
+    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
   ]);
 
   const yearsPlayedCounts = useMemo(() => {
@@ -810,22 +791,15 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      viewMode,
+      onlyNowPlaying,
+      onlyAbandoned,
+      view,
       exclude: "yearsPlayed",
     });
     return countByTagList(base, (g) => g.yearPlayed);
   }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    onlyBacklog,
-    onlyCompleted,
-    viewMode,
+    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
   ]);
 
   const genreCounts = useMemo(() => {
@@ -840,36 +814,32 @@ export default function HomePage() {
       selectedYearsPlayed,
       onlyBacklog,
       onlyCompleted,
-      viewMode,
+      onlyNowPlaying,
+      onlyAbandoned,
+      view,
       exclude: "genres",
     });
     return countByTagList(base, (g) => g.genres);
   }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    onlyBacklog,
-    onlyCompleted,
-    viewMode,
+    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
   ]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
 
     const base = games.filter((g) => {
-      // ✅ top tabs filter
-      if (viewMode === "backlogQueue" && g.status !== "Queued") return false;
-      if (viewMode === "wishlist" && g.ownership !== "Wishlist") return false;
+      // top tabs view filter
+      if (view === "queue" && g.status.toLowerCase() !== "queued") return false;
+      if (view === "wishlist" && g.ownership.toLowerCase() !== "wishlist") return false;
 
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
       if (onlyBacklog && !toBool(g.backlog)) return false;
       if (onlyCompleted && !toBool(g.completed)) return false;
+
+      if (onlyNowPlaying && g.status.toLowerCase() !== "now playing") return false;
+      if (onlyAbandoned && g.status.toLowerCase() !== "abandoned") return false;
 
       if (selectedStatus && g.status !== selectedStatus) return false;
       if (selectedOwnership && g.ownership !== selectedOwnership) return false;
@@ -906,12 +876,14 @@ export default function HomePage() {
         return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
       if (sortBy === "dateCompleted")
         return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateAdded")
+        return (toDateNum(a.dateAdded || "") - toDateNum(b.dateAdded || "")) * dir;
       return 0;
     });
   }, [
     games,
-    viewMode,
     q,
+    view,
     selectedPlatform,
     selectedStatus,
     selectedOwnership,
@@ -920,6 +892,8 @@ export default function HomePage() {
     selectedYearsPlayed,
     onlyBacklog,
     onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
     sortBy,
     sortDir,
   ]);
@@ -946,6 +920,8 @@ export default function HomePage() {
     setSelectedFormat("");
     setOnlyBacklog(false);
     setOnlyCompleted(false);
+    setOnlyNowPlaying(false);
+    setOnlyAbandoned(false);
   }
 
   const headerAvatarUrl =
@@ -999,6 +975,7 @@ export default function HomePage() {
             margin: -18px -18px 14px -18px;
           }
           .mobileOnly { display: block !important; }
+          .desktopOnly { display: none !important; }
         }
 
         .mobileOnly { display: none; }
@@ -1006,7 +983,11 @@ export default function HomePage() {
 
       {filtersOpen && <div className="overlay" onClick={() => setFiltersOpen(false)} />}
 
-      <aside className={`sidebar ${filtersOpen ? "open" : ""}`} style={sidebarStyle} aria-label="Filters">
+      <aside
+        className={`sidebar ${filtersOpen ? "open" : ""}`}
+        style={sidebarStyle}
+        aria-label="Filters"
+      >
         <div
           style={{
             padding: "12px 10px",
@@ -1069,23 +1050,37 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>SORT</div>
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <SmallSelect value={sortBy} onChange={(v) => setSortBy(v as any)}>
+              <SmallSelect
+                value={sortBy}
+                onChange={(v) =>
+                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")
+                }
+              >
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
                 <option value="dateCompleted">Date Completed</option>
+                <option value="dateAdded">Date Added</option>
               </SmallSelect>
 
-              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as any)}>
+              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as "asc" | "desc")}>
                 <option value="asc">Asc</option>
                 <option value="desc">Desc</option>
               </SmallSelect>
             </div>
           </div>
 
-          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>FILTERS</div>
-            <CheckboxRow label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
-            <CheckboxRow label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 6 }}>
+              FILTERS
+            </div>
+
+            {/* ✅ aligned 2x2 layout */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <CheckboxRow label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
+              <CheckboxRow label="Now Playing" checked={onlyNowPlaying} onChange={setOnlyNowPlaying} />
+              <CheckboxRow label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
+              <CheckboxRow label="Abandoned" checked={onlyAbandoned} onChange={setOnlyAbandoned} />
+            </div>
           </div>
 
           <div style={{ marginTop: 12 }}>
@@ -1093,8 +1088,8 @@ export default function HomePage() {
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
             <input
               type="range"
-              min={90}
-              max={260}
+              min={80}
+              max={220}
               value={tileSize}
               onChange={(e) => setTileSize(Number(e.target.value))}
               style={{ width: "100%" }}
@@ -1150,6 +1145,7 @@ export default function HomePage() {
       </aside>
 
       <main style={{ flex: 1, padding: 18 }}>
+        {/* Mobile top bar */}
         <div className="mobileTopbar mobileOnly">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <button
@@ -1167,12 +1163,52 @@ export default function HomePage() {
             >
               Filters
             </button>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>{filtered.length} shown</div>
+            <div style={{ fontSize: 12, color: COLORS.muted }}>
+              {filtered.length} games
+            </div>
           </div>
         </div>
 
-        {/* ✅ Top navigation like ggapp */}
-        <TopTabs viewMode={viewMode} setViewMode={setViewMode} counts={tabCounts} />
+        {/* ✅ GG-style header section */}
+        <div
+          className="desktopOnly"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 18,
+            padding: "6px 6px 14px 6px",
+            borderBottom: `1px solid ${COLORS.border}`,
+            marginBottom: 14,
+          }}
+        >
+          {/* Tabs */}
+          <div style={{ display: "flex", gap: 22, alignItems: "flex-end" }}>
+            <TabButton
+              label="Games"
+              active={view === "games"}
+              onClick={() => setView("games")}
+            />
+            <TabButton
+              label="Backlog Queue"
+              active={view === "queue"}
+              onClick={() => setView("queue")}
+            />
+            <TabButton
+              label="Wishlist"
+              active={view === "wishlist"}
+              onClick={() => setView("wishlist")}
+            />
+          </div>
+
+          {/* Stats */}
+          <div style={{ display: "flex", gap: 26, alignItems: "center" }}>
+            <Stat value={totalGames} label="Games" />
+            <Stat value={queuedCount} label="Queued" />
+            <Stat value={wishlistCount} label="Wishlist" />
+            <Stat value={playedThisYearCount} label={`Played in ${currentYear}`} />
+          </div>
+        </div>
 
         {loading ? (
           <div>Loading…</div>
@@ -1181,12 +1217,12 @@ export default function HomePage() {
             style={{
               display: "grid",
               gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
-              gap: 16,
+              gap: 12,
             }}
           >
             {filtered.map((g) => (
               <div
-                key={titleKey(g.title)} // ✅ stable key = deduped title
+                key={titleKey(g.title)}
                 style={{
                   aspectRatio: "2 / 3",
                   background: COLORS.card,
@@ -1201,11 +1237,14 @@ export default function HomePage() {
                     src={g.coverUrl}
                     alt={g.title}
                     loading="lazy"
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     onError={(e) => {
-                      // optional: prevent broken image icon from being super ugly
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                      // make it obvious when a cover can't load
+                      const el = e.currentTarget;
+                      el.style.display = "none";
+                      const parent = el.parentElement;
+                      if (parent) parent.setAttribute("data-cover-failed", "1");
                     }}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                   />
                 ) : (
                   <div
@@ -1221,6 +1260,18 @@ export default function HomePage() {
                     No cover
                   </div>
                 )}
+
+                {/* fallback if img fails */}
+                <div
+                  style={{
+                    display: "none",
+                    height: "100%",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: COLORS.muted,
+                    fontSize: 12,
+                  }}
+                />
               </div>
             ))}
           </div>
