@@ -18,13 +18,14 @@ type Game = {
   format: string;
 
   releaseDate: string;
+  dateAdded: string; // ✅ NEW
   backlog: string;
   completed: string;
   dateCompleted: string;
-
-  // optional, if your sheet has it later:
-  dateAdded?: string;
 };
+
+const GOOGLE_FORM_EMBED_URL =
+  "PASTE_YOUR_GOOGLE_FORM_EMBED_URL_HERE"; // ✅ replace with the iframe src URL
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -109,11 +110,10 @@ function rowToGame(row: Row): Game | null {
     format: norm(row["Format"]),
 
     releaseDate: norm(row["ReleaseDate"]),
+    dateAdded: norm(row["DateAdded"]), // ✅
     backlog: norm(row["Backlog"]),
     completed: norm(row["Completed"]),
     dateCompleted: norm(row["DateCompleted"]),
-
-    dateAdded: norm(row["DateAdded"]),
   };
 }
 
@@ -131,7 +131,6 @@ function dedupeByTitle(rows: Game[]) {
     }
 
     const coverUrl = existing.coverUrl || g.coverUrl;
-
     const platforms = uniqueSorted([...existing.platforms, ...g.platforms]);
     const genres = uniqueSorted([...existing.genres, ...g.genres]);
     const yearPlayed = uniqueSorted([...existing.yearPlayed, ...g.yearPlayed]);
@@ -157,13 +156,12 @@ function dedupeByTitle(rows: Game[]) {
       dateCompleted =
         aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
 
-    // dateAdded: earliest non-empty
-    const aAdd = toDateNum(existing.dateAdded || "");
-    const bAdd = toDateNum(g.dateAdded || "");
-    let dateAdded = existing.dateAdded || "";
-    if (!aAdd && bAdd) dateAdded = g.dateAdded || "";
-    else if (aAdd && bAdd)
-      dateAdded = aAdd <= bAdd ? (existing.dateAdded || "") : (g.dateAdded || "");
+    // dateAdded: earliest non-empty (when you first added it)
+    const aAdd = toDateNum(existing.dateAdded);
+    const bAdd = toDateNum(g.dateAdded);
+    let dateAdded = existing.dateAdded;
+    if (!aAdd && bAdd) dateAdded = g.dateAdded;
+    else if (aAdd && bAdd) dateAdded = aAdd <= bAdd ? existing.dateAdded : g.dateAdded;
 
     const status = existing.status || g.status;
     const ownership = existing.ownership || g.ownership;
@@ -178,8 +176,8 @@ function dedupeByTitle(rows: Game[]) {
       backlog,
       completed,
       releaseDate,
-      dateCompleted,
       dateAdded,
+      dateCompleted,
       status,
       ownership,
       format,
@@ -189,9 +187,6 @@ function dedupeByTitle(rows: Game[]) {
   return Array.from(map.values());
 }
 
-/**
- * Base list for counts (respects all filters except the facet you’re counting).
- */
 function buildBaseForFacet(args: {
   games: Game[];
   q: string;
@@ -205,7 +200,7 @@ function buildBaseForFacet(args: {
   onlyCompleted: boolean;
   onlyNowPlaying: boolean;
   onlyAbandoned: boolean;
-  view: "games" | "queue" | "wishlist";
+  view: "games" | "queued" | "wishlist";
   exclude:
     | "platforms"
     | "status"
@@ -234,17 +229,16 @@ function buildBaseForFacet(args: {
   const query = q.trim().toLowerCase();
 
   return games.filter((g) => {
-    // top tabs view filter
-    if (view === "queue" && g.status.toLowerCase() !== "queued") return false;
-    if (view === "wishlist" && g.ownership.toLowerCase() !== "wishlist") return false;
+    // View tabs
+    if (view === "queued" && g.status !== "Queued") return false;
+    if (view === "wishlist" && g.ownership !== "Wishlist") return false;
 
     if (query && !g.title.toLowerCase().includes(query)) return false;
 
     if (onlyBacklog && !toBool(g.backlog)) return false;
     if (onlyCompleted && !toBool(g.completed)) return false;
-
-    if (onlyNowPlaying && g.status.toLowerCase() !== "now playing") return false;
-    if (onlyAbandoned && g.status.toLowerCase() !== "abandoned") return false;
+    if (onlyNowPlaying && g.status !== "Now Playing") return false;
+    if (onlyAbandoned && g.status !== "Abandoned") return false;
 
     if (exclude !== "status" && selectedStatus && g.status !== selectedStatus) return false;
     if (exclude !== "ownership" && selectedOwnership && g.ownership !== selectedOwnership) return false;
@@ -554,13 +548,24 @@ function CheckboxRow({
   );
 }
 
+function StatBlock({ value, label }: { value: number; label: string }) {
+  return (
+    <div style={{ textAlign: "right" }}>
+      <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
 function TabButton({
   active,
-  label,
+  children,
   onClick,
 }: {
   active: boolean;
-  label: string;
+  children: React.ReactNode;
   onClick: () => void;
 }) {
   return (
@@ -570,33 +575,26 @@ function TabButton({
         border: "none",
         background: "transparent",
         color: active ? COLORS.text : COLORS.muted,
-        cursor: "pointer",
-        padding: "10px 2px",
         fontSize: 18,
-        fontWeight: 800,
-        letterSpacing: "-0.01em",
-        borderBottom: active ? `3px solid ${COLORS.accent}` : "3px solid transparent",
+        fontWeight: 900,
+        padding: "10px 6px",
+        cursor: "pointer",
+        position: "relative",
       }}
     >
-      {label}
+      {children}
+      <span
+        style={{
+          position: "absolute",
+          left: 6,
+          right: 6,
+          bottom: 2,
+          height: 3,
+          borderRadius: 999,
+          background: active ? COLORS.accent : "transparent",
+        }}
+      />
     </button>
-  );
-}
-
-function Stat({
-  value,
-  label,
-}: {
-  value: number;
-  label: string;
-}) {
-  return (
-    <div style={{ textAlign: "center", minWidth: 84 }}>
-      <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.1 }}>{value}</div>
-      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginTop: 2, textTransform: "uppercase" }}>
-        {label}
-      </div>
-    </div>
   );
 }
 
@@ -606,7 +604,7 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ default cover size to 100
+  // ✅ default cover size = 100
   const [tileSize, setTileSize] = useState(100);
 
   const [q, setQ] = useState("");
@@ -622,27 +620,33 @@ export default function HomePage() {
   const [onlyBacklog, setOnlyBacklog] = useState(false);
   const [onlyCompleted, setOnlyCompleted] = useState(false);
 
-  // ✅ new checkbox filters
+  // ✅ new status checkboxes
   const [onlyNowPlaying, setOnlyNowPlaying] = useState(false);
   const [onlyAbandoned, setOnlyAbandoned] = useState(false);
 
-  // ✅ top tabs
-  const [view, setView] = useState<"games" | "queue" | "wishlist">("games");
-
-  // Default sort = release date (newest first)
+  // sort options
   const [sortBy, setSortBy] = useState<
     "title" | "releaseDate" | "dateCompleted" | "dateAdded"
   >("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
+  // sections collapsed by default
   const [openPlatform, setOpenPlatform] = useState(false);
   const [openStatus, setOpenStatus] = useState(false);
   const [openOwnership, setOpenOwnership] = useState(false);
   const [openFormat, setOpenFormat] = useState(false);
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
+  const [openAddGame, setOpenAddGame] = useState(false);
 
+  // mobile sidebar open/close
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // top tabs
+  const [view, setView] = useState<"games" | "queued" | "wishlist">("games");
+
+  // google form modal
+  const [formOpen, setFormOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -655,9 +659,7 @@ export default function HomePage() {
       const parsed = Papa.parse<Row>(text, { header: true, skipEmptyLines: true });
       const mapped = (parsed.data as Row[]).map(rowToGame).filter(Boolean) as Game[];
 
-      // ✅ dedupe here
       setGames(dedupeByTitle(mapped));
-
       setLoading(false);
     }
 
@@ -670,22 +672,6 @@ export default function HomePage() {
   const formats = useMemo(() => uniqueSorted(games.map((g) => g.format)), [games]);
   const allGenres = useMemo(() => uniqueSorted(games.flatMap((g) => g.genres)), [games]);
   const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
-
-  // Stats (like screenshot)
-  const currentYear = String(new Date().getFullYear());
-  const totalGames = games.length;
-  const queuedCount = useMemo(
-    () => games.filter((g) => g.status.toLowerCase() === "queued").length,
-    [games]
-  );
-  const wishlistCount = useMemo(
-    () => games.filter((g) => g.ownership.toLowerCase() === "wishlist").length,
-    [games]
-  );
-  const playedThisYearCount = useMemo(() => {
-    const y = currentYear.toLowerCase();
-    return games.filter((g) => g.yearPlayed.some((v) => v.toLowerCase() === y)).length;
-  }, [games, currentYear]);
 
   const platformCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -706,8 +692,19 @@ export default function HomePage() {
     });
     return countByTagList(base, (g) => g.platforms);
   }, [
-    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
-    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    onlyBacklog,
+    onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
+    view,
   ]);
 
   const statusCounts = useMemo(() => {
@@ -729,8 +726,19 @@ export default function HomePage() {
     });
     return countByKey(base, (g) => g.status);
   }, [
-    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
-    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    onlyBacklog,
+    onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
+    view,
   ]);
 
   const ownershipCounts = useMemo(() => {
@@ -752,8 +760,19 @@ export default function HomePage() {
     });
     return countByKey(base, (g) => g.ownership);
   }, [
-    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
-    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    onlyBacklog,
+    onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
+    view,
   ]);
 
   const formatCounts = useMemo(() => {
@@ -775,8 +794,19 @@ export default function HomePage() {
     });
     return countByKey(base, (g) => g.format);
   }, [
-    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
-    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    onlyBacklog,
+    onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
+    view,
   ]);
 
   const yearsPlayedCounts = useMemo(() => {
@@ -798,8 +828,19 @@ export default function HomePage() {
     });
     return countByTagList(base, (g) => g.yearPlayed);
   }, [
-    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
-    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    onlyBacklog,
+    onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
+    view,
   ]);
 
   const genreCounts = useMemo(() => {
@@ -821,25 +862,35 @@ export default function HomePage() {
     });
     return countByTagList(base, (g) => g.genres);
   }, [
-    games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
-    selectedGenres, selectedYearsPlayed, onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned, view
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    onlyBacklog,
+    onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
+    view,
   ]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
 
     const base = games.filter((g) => {
-      // top tabs view filter
-      if (view === "queue" && g.status.toLowerCase() !== "queued") return false;
-      if (view === "wishlist" && g.ownership.toLowerCase() !== "wishlist") return false;
+      // view tabs
+      if (view === "queued" && g.status !== "Queued") return false;
+      if (view === "wishlist" && g.ownership !== "Wishlist") return false;
 
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
       if (onlyBacklog && !toBool(g.backlog)) return false;
       if (onlyCompleted && !toBool(g.completed)) return false;
-
-      if (onlyNowPlaying && g.status.toLowerCase() !== "now playing") return false;
-      if (onlyAbandoned && g.status.toLowerCase() !== "abandoned") return false;
+      if (onlyNowPlaying && g.status !== "Now Playing") return false;
+      if (onlyAbandoned && g.status !== "Abandoned") return false;
 
       if (selectedStatus && g.status !== selectedStatus) return false;
       if (selectedOwnership && g.ownership !== selectedOwnership) return false;
@@ -872,31 +923,40 @@ export default function HomePage() {
 
     return base.sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-      if (sortBy === "releaseDate")
-        return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted")
-        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
-      if (sortBy === "dateAdded")
-        return (toDateNum(a.dateAdded || "") - toDateNum(b.dateAdded || "")) * dir;
+      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
   }, [
     games,
     q,
     view,
+    onlyBacklog,
+    onlyCompleted,
+    onlyNowPlaying,
+    onlyAbandoned,
     selectedPlatform,
     selectedStatus,
     selectedOwnership,
     selectedFormat,
     selectedGenres,
     selectedYearsPlayed,
-    onlyBacklog,
-    onlyCompleted,
-    onlyNowPlaying,
-    onlyAbandoned,
     sortBy,
     sortDir,
   ]);
+
+  const currentYear = new Date().getFullYear();
+  const stats = useMemo(() => {
+    const totalGames = games.length;
+    const queued = games.filter((g) => g.status === "Queued").length;
+    const wish = games.filter((g) => g.ownership === "Wishlist").length;
+    const playedThisYear = games.filter((g) =>
+      g.yearPlayed.some((y) => y === String(currentYear))
+    ).length;
+
+    return { totalGames, queued, wish, playedThisYear };
+  }, [games, currentYear]);
 
   function toggleGenre(genre: string) {
     setSelectedGenres((prev) =>
@@ -940,6 +1000,10 @@ export default function HomePage() {
     msOverflowStyle: "none",
   };
 
+  const formIsConfigured =
+    GOOGLE_FORM_EMBED_URL &&
+    GOOGLE_FORM_EMBED_URL !== "PASTE_YOUR_GOOGLE_FORM_EMBED_URL_HERE";
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
       <style>{`
@@ -956,9 +1020,7 @@ export default function HomePage() {
             transition: transform 160ms ease;
             border-right: 1px solid ${COLORS.border};
           }
-          .sidebar.open {
-            transform: translateX(0);
-          }
+          .sidebar.open { transform: translateX(0); }
           .overlay {
             position: fixed;
             inset: 0;
@@ -981,13 +1043,109 @@ export default function HomePage() {
         .mobileOnly { display: none; }
       `}</style>
 
+      {/* Overlay for mobile sidebar */}
       {filtersOpen && <div className="overlay" onClick={() => setFiltersOpen(false)} />}
 
-      <aside
-        className={`sidebar ${filtersOpen ? "open" : ""}`}
-        style={sidebarStyle}
-        aria-label="Filters"
-      >
+      {/* Google Form Modal */}
+      {formOpen && (
+        <>
+          <div
+            className="overlay"
+            onClick={() => setFormOpen(false)}
+            style={{ zIndex: 80 }}
+          />
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 90,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 16,
+            }}
+          >
+            <div
+              style={{
+                width: "min(920px, 95vw)",
+                height: "min(720px, 90vh)",
+                background: COLORS.panel,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: 16,
+                overflow: "hidden",
+                boxShadow: "0 30px 80px rgba(0,0,0,.65)",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <div
+                style={{
+                  padding: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  borderBottom: `1px solid ${COLORS.border}`,
+                }}
+              >
+                <div style={{ fontWeight: 900 }}>Add Game</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {formIsConfigured && (
+                    <a
+                      href={GOOGLE_FORM_EMBED_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        textDecoration: "none",
+                        padding: "8px 10px",
+                        borderRadius: 12,
+                        background: COLORS.card,
+                        border: `1px solid ${COLORS.border}`,
+                        color: COLORS.text,
+                        fontWeight: 800,
+                        fontSize: 12,
+                      }}
+                    >
+                      Open in new tab
+                    </a>
+                  )}
+                  <button
+                    onClick={() => setFormOpen(false)}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 12,
+                      background: COLORS.card,
+                      border: `1px solid ${COLORS.border}`,
+                      color: COLORS.text,
+                      cursor: "pointer",
+                      fontWeight: 800,
+                      fontSize: 12,
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              {!formIsConfigured ? (
+                <div style={{ padding: 14, color: COLORS.muted, fontSize: 12 }}>
+                  Paste your Google Form embed URL into <b>GOOGLE_FORM_EMBED_URL</b> in
+                  <code style={{ marginLeft: 6, color: COLORS.text }}>page.tsx</code>.
+                </div>
+              ) : (
+                <iframe
+                  title="Add Game Form"
+                  src={GOOGLE_FORM_EMBED_URL}
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                />
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Sidebar */}
+      <aside className={`sidebar ${filtersOpen ? "open" : ""}`} style={sidebarStyle}>
         <div
           style={{
             padding: "12px 10px",
@@ -997,6 +1155,7 @@ export default function HomePage() {
             marginBottom: 12,
           }}
         >
+          {/* Mobile close button */}
           <button
             className="mobileOnly"
             onClick={() => setFiltersOpen(false)}
@@ -1022,8 +1181,8 @@ export default function HomePage() {
               alt="Chris"
               referrerPolicy="no-referrer"
               style={{
-                width: 84,
-                height: 84,
+                width: 64,
+                height: 64,
                 borderRadius: 999,
                 objectFit: "cover",
                 border: `1px solid ${COLORS.border}`,
@@ -1050,32 +1209,34 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>SORT</div>
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <SmallSelect
-                value={sortBy}
-                onChange={(v) =>
-                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")
-                }
-              >
+              <SmallSelect value={sortBy} onChange={(v) => setSortBy(v as any)}>
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
-                <option value="dateCompleted">Date Completed</option>
                 <option value="dateAdded">Date Added</option>
+                <option value="dateCompleted">Date Completed</option>
               </SmallSelect>
 
-              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as "asc" | "desc")}>
+              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as any)}>
                 <option value="asc">Asc</option>
                 <option value="desc">Desc</option>
               </SmallSelect>
             </div>
           </div>
 
+          {/* Filters checkboxes (aligned in a 2-column grid) */}
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 6 }}>
               FILTERS
             </div>
 
-            {/* ✅ aligned 2x2 layout */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
               <CheckboxRow label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
               <CheckboxRow label="Now Playing" checked={onlyNowPlaying} onChange={setOnlyNowPlaying} />
               <CheckboxRow label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
@@ -1088,7 +1249,7 @@ export default function HomePage() {
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
             <input
               type="range"
-              min={80}
+              min={70}
               max={220}
               value={tileSize}
               onChange={(e) => setTileSize(Number(e.target.value))}
@@ -1096,6 +1257,30 @@ export default function HomePage() {
             />
           </div>
         </div>
+
+        <CollapsibleSection title="Add Game" open={openAddGame} setOpen={setOpenAddGame}>
+          <button
+            onClick={() => setFormOpen(true)}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 12,
+              background: COLORS.card,
+              border: `1px solid ${COLORS.border}`,
+              color: COLORS.text,
+              cursor: "pointer",
+              fontWeight: 900,
+              fontSize: 12,
+              textAlign: "left",
+            }}
+          >
+            + Add game (Google Form)
+          </button>
+
+          <div style={{ marginTop: 8, fontSize: 11, color: COLORS.muted, lineHeight: 1.4 }}>
+            Submissions go into your Google Sheet automatically.
+          </div>
+        </CollapsibleSection>
 
         <CollapsibleSection title="Platform" open={openPlatform} setOpen={setOpenPlatform}>
           <FacetRowsSingle options={platforms} counts={platformCounts} selected={selectedPlatform} onSelect={setSelectedPlatform} />
@@ -1114,7 +1299,7 @@ export default function HomePage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
+          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={(y) => setSelectedYearsPlayed((prev) => prev.includes(y) ? prev.filter(v => v !== y) : [...prev, y])} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
@@ -1144,8 +1329,9 @@ export default function HomePage() {
         </div>
       </aside>
 
+      {/* Main */}
       <main style={{ flex: 1, padding: 18 }}>
-        {/* Mobile top bar */}
+        {/* Mobile topbar */}
         <div className="mobileTopbar mobileOnly">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <button
@@ -1157,56 +1343,52 @@ export default function HomePage() {
                 border: `1px solid ${COLORS.border}`,
                 color: COLORS.text,
                 cursor: "pointer",
-                fontWeight: 800,
+                fontWeight: 900,
                 fontSize: 12,
               }}
             >
               Filters
             </button>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>
-              {filtered.length} games
-            </div>
+            <button
+              onClick={() => setFormOpen(true)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 12,
+                background: COLORS.card,
+                border: `1px solid ${COLORS.border}`,
+                color: COLORS.text,
+                cursor: "pointer",
+                fontWeight: 900,
+                fontSize: 12,
+              }}
+            >
+              + Add Game
+            </button>
           </div>
         </div>
 
-        {/* ✅ GG-style header section */}
+        {/* Desktop header row: tabs + stats */}
         <div
           className="desktopOnly"
           style={{
             display: "flex",
-            alignItems: "center",
+            alignItems: "flex-end",
             justifyContent: "space-between",
-            gap: 18,
-            padding: "6px 6px 14px 6px",
-            borderBottom: `1px solid ${COLORS.border}`,
-            marginBottom: 14,
+            gap: 16,
+            marginBottom: 10,
           }}
         >
-          {/* Tabs */}
-          <div style={{ display: "flex", gap: 22, alignItems: "flex-end" }}>
-            <TabButton
-              label="Games"
-              active={view === "games"}
-              onClick={() => setView("games")}
-            />
-            <TabButton
-              label="Backlog Queue"
-              active={view === "queue"}
-              onClick={() => setView("queue")}
-            />
-            <TabButton
-              label="Wishlist"
-              active={view === "wishlist"}
-              onClick={() => setView("wishlist")}
-            />
+          <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+            <TabButton active={view === "games"} onClick={() => setView("games")}>Games</TabButton>
+            <TabButton active={view === "queued"} onClick={() => setView("queued")}>Backlog Queue</TabButton>
+            <TabButton active={view === "wishlist"} onClick={() => setView("wishlist")}>Wishlist</TabButton>
           </div>
 
-          {/* Stats */}
-          <div style={{ display: "flex", gap: 26, alignItems: "center" }}>
-            <Stat value={totalGames} label="Games" />
-            <Stat value={queuedCount} label="Queued" />
-            <Stat value={wishlistCount} label="Wishlist" />
-            <Stat value={playedThisYearCount} label={`Played in ${currentYear}`} />
+          <div style={{ display: "flex", gap: 26, alignItems: "flex-end" }}>
+            <StatBlock value={stats.totalGames} label="Games" />
+            <StatBlock value={stats.queued} label="Queued" />
+            <StatBlock value={stats.wish} label="Wishlist" />
+            <StatBlock value={stats.playedThisYear} label={`Played in ${currentYear}`} />
           </div>
         </div>
 
@@ -1220,13 +1402,13 @@ export default function HomePage() {
               gap: 12,
             }}
           >
-            {filtered.map((g) => (
+            {filtered.map((g, i) => (
               <div
-                key={titleKey(g.title)}
+                key={`${titleKey(g.title)}-${i}`}
                 style={{
                   aspectRatio: "2 / 3",
                   background: COLORS.card,
-                  borderRadius: 14,
+                  borderRadius: 12,
                   overflow: "hidden",
                   boxShadow: "0 20px 40px rgba(0,0,0,.6)",
                 }}
@@ -1237,14 +1419,24 @@ export default function HomePage() {
                     src={g.coverUrl}
                     alt={g.title}
                     loading="lazy"
-                    onError={(e) => {
-                      // make it obvious when a cover can't load
-                      const el = e.currentTarget;
-                      el.style.display = "none";
-                      const parent = el.parentElement;
-                      if (parent) parent.setAttribute("data-cover-failed", "1");
-                    }}
                     style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    onError={(e) => {
+                      // If an image fails, show a simple fallback
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                      const parent = e.currentTarget.parentElement;
+                      if (parent && !parent.querySelector(".img-fallback")) {
+                        const div = document.createElement("div");
+                        div.className = "img-fallback";
+                        div.style.height = "100%";
+                        div.style.display = "flex";
+                        div.style.alignItems = "center";
+                        div.style.justifyContent = "center";
+                        div.style.color = COLORS.muted;
+                        div.style.fontSize = "12px";
+                        div.textContent = "Cover failed";
+                        parent.appendChild(div);
+                      }
+                    }}
                   />
                 ) : (
                   <div
@@ -1260,18 +1452,6 @@ export default function HomePage() {
                     No cover
                   </div>
                 )}
-
-                {/* fallback if img fails */}
-                <div
-                  style={{
-                    display: "none",
-                    height: "100%",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: COLORS.muted,
-                    fontSize: 12,
-                  }}
-                />
               </div>
             ))}
           </div>
