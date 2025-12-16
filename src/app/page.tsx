@@ -18,12 +18,10 @@ type Game = {
   format: string;
 
   releaseDate: string;
+  dateAdded: string;      // ✅ NEW
   backlog: string;
   completed: string;
   dateCompleted: string;
-
-  // ✅ NEW
-  dateAdded: string;
 };
 
 const COLORS = {
@@ -52,20 +50,6 @@ function splitTags(s: string) {
     .filter(Boolean);
 }
 
-function pickCover(row: Row) {
-  // ✅ prefer your locally cached URL if present
-  const local = norm(row["LocalCoverURL"]);
-  if (local) return local;
-
-  const coverUrl = norm(row["CoverURL"]);
-  if (coverUrl) return coverUrl;
-
-  const cover = norm(row["Cover"]);
-  if (cover.startsWith("http")) return cover;
-
-  return "";
-}
-
 function toBool(v: string) {
   const s = norm(v).toLowerCase();
   return (
@@ -81,8 +65,6 @@ function toBool(v: string) {
 function toDateNum(s: string) {
   const v = norm(s);
   if (!v) return 0;
-
-  // Works for ISO (yyyy-mm-dd). Also tolerates many other date formats.
   const t = Date.parse(v);
   return Number.isFinite(t) ? t : 0;
 }
@@ -97,8 +79,50 @@ function titleKey(title: string) {
   return norm(title).toLowerCase();
 }
 
-function statusIs(g: Game, s: string) {
-  return norm(g.status).toLowerCase() === s.toLowerCase();
+/**
+ * ✅ Normalize Google Drive links so they reliably load in <img>.
+ * Supports:
+ * - https://drive.google.com/uc?id=FILE
+ * - https://drive.google.com/uc?export=view&id=FILE
+ * - https://drive.google.com/file/d/FILE/view?...
+ */
+function normalizeDriveImageUrl(url: string) {
+  const u = norm(url);
+  if (!u) return "";
+
+  // If it's already a uc export url, keep as-is
+  if (u.includes("drive.google.com/uc?") && u.includes("id=") && u.includes("export=")) {
+    return u;
+  }
+
+  // uc?id=FILE_ID
+  const ucIdMatch = u.match(/drive\.google\.com\/uc\?[^#]*\bid=([^&]+)/i);
+  if (ucIdMatch?.[1]) {
+    return `https://drive.google.com/uc?export=view&id=${ucIdMatch[1]}`;
+  }
+
+  // file/d/FILE_ID/...
+  const fileDMatch = u.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+  if (fileDMatch?.[1]) {
+    return `https://drive.google.com/uc?export=view&id=${fileDMatch[1]}`;
+  }
+
+  return u;
+}
+
+function pickCover(row: Row) {
+  // ✅ Prefer LocalCoverURL if present
+  const local = norm(row["LocalCoverURL"]);
+  if (local) return normalizeDriveImageUrl(local);
+
+  // fallback to CoverURL (IGDB or whatever)
+  const coverUrl = norm(row["CoverURL"]);
+  if (coverUrl) return normalizeDriveImageUrl(coverUrl);
+
+  const cover = norm(row["Cover"]);
+  if (cover.startsWith("http")) return normalizeDriveImageUrl(cover);
+
+  return "";
 }
 
 function rowToGame(row: Row): Game | null {
@@ -118,12 +142,10 @@ function rowToGame(row: Row): Game | null {
     format: norm(row["Format"]),
 
     releaseDate: norm(row["ReleaseDate"]),
+    dateAdded: norm(row["DateAdded"]), // ✅ NEW
     backlog: norm(row["Backlog"]),
     completed: norm(row["Completed"]),
     dateCompleted: norm(row["DateCompleted"]),
-
-    // ✅ NEW
-    dateAdded: norm(row["DateAdded"]),
   };
 }
 
@@ -140,7 +162,7 @@ function dedupeByTitle(rows: Game[]) {
       continue;
     }
 
-    // cover: prefer existing, else incoming
+    // cover: prefer one that exists
     const coverUrl = existing.coverUrl || g.coverUrl;
 
     // union tag arrays
@@ -153,21 +175,12 @@ function dedupeByTitle(rows: Game[]) {
     const completed =
       toBool(existing.completed) || toBool(g.completed) ? "true" : "";
 
-    // releaseDate: keep earliest non-empty (original release)
+    // releaseDate: keep earliest non-empty
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
     if (!aRel && bRel) releaseDate = g.releaseDate;
-    else if (aRel && bRel)
-      releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
-
-    // dateCompleted: keep latest non-empty
-    const aComp = toDateNum(existing.dateCompleted);
-    const bComp = toDateNum(g.dateCompleted);
-    let dateCompleted = existing.dateCompleted;
-    if (!aComp && bComp) dateCompleted = g.dateCompleted;
-    else if (aComp && bComp)
-      dateCompleted = aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
+    else if (aRel && bRel) releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
     // dateAdded: keep earliest non-empty (first time you added it)
     const aAdd = toDateNum(existing.dateAdded);
@@ -175,6 +188,13 @@ function dedupeByTitle(rows: Game[]) {
     let dateAdded = existing.dateAdded;
     if (!aAdd && bAdd) dateAdded = g.dateAdded;
     else if (aAdd && bAdd) dateAdded = aAdd <= bAdd ? existing.dateAdded : g.dateAdded;
+
+    // dateCompleted: keep latest non-empty
+    const aComp = toDateNum(existing.dateCompleted);
+    const bComp = toDateNum(g.dateCompleted);
+    let dateCompleted = existing.dateCompleted;
+    if (!aComp && bComp) dateCompleted = g.dateCompleted;
+    else if (aComp && bComp) dateCompleted = aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
 
     // other single fields: prefer existing non-empty, otherwise take incoming
     const status = existing.status || g.status;
@@ -190,8 +210,8 @@ function dedupeByTitle(rows: Game[]) {
       backlog,
       completed,
       releaseDate,
-      dateCompleted,
       dateAdded,
+      dateCompleted,
       status,
       ownership,
       format,
@@ -215,11 +235,8 @@ function buildBaseForFacet(args: {
   selectedYearsPlayed: string[];
   onlyBacklog: boolean;
   onlyCompleted: boolean;
-
-  // ✅ NEW
-  onlyNowPlaying: boolean;
-  onlyAbandoned: boolean;
-
+  onlyNowPlaying: boolean;  // ✅ NEW
+  onlyAbandoned: boolean;   // ✅ NEW
   exclude:
     | "platforms"
     | "status"
@@ -252,13 +269,9 @@ function buildBaseForFacet(args: {
     if (onlyBacklog && !toBool(g.backlog)) return false;
     if (onlyCompleted && !toBool(g.completed)) return false;
 
-    // ✅ status quick checkboxes (OR between them if both checked)
-    if (onlyNowPlaying || onlyAbandoned) {
-      const ok =
-        (onlyNowPlaying && statusIs(g, "Now Playing")) ||
-        (onlyAbandoned && statusIs(g, "Abandoned"));
-      if (!ok) return false;
-    }
+    // ✅ NEW status checkboxes
+    if (onlyNowPlaying && g.status !== "Now Playing") return false;
+    if (onlyAbandoned && g.status !== "Abandoned") return false;
 
     if (exclude !== "status" && selectedStatus && g.status !== selectedStatus) return false;
     if (exclude !== "ownership" && selectedOwnership && g.ownership !== selectedOwnership) return false;
@@ -556,7 +569,7 @@ function CheckboxRow({
         color: COLORS.text,
         userSelect: "none",
         cursor: "pointer",
-        whiteSpace: "nowrap",
+        margin: 0,
       }}
     >
       <input
@@ -590,14 +603,14 @@ export default function HomePage() {
   const [onlyBacklog, setOnlyBacklog] = useState(false);
   const [onlyCompleted, setOnlyCompleted] = useState(false);
 
-  // ✅ NEW status checkboxes
+  // ✅ NEW
   const [onlyNowPlaying, setOnlyNowPlaying] = useState(false);
   const [onlyAbandoned, setOnlyAbandoned] = useState(false);
 
-  // ✅ default sort = Release Date (newest first)
-  const [sortBy, setSortBy] = useState<
-    "title" | "releaseDate" | "dateCompleted" | "dateAdded"
-  >("releaseDate");
+  // ✅ include Date Added in sort options
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateAdded" | "dateCompleted">(
+    "releaseDate"
+  );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -607,6 +620,7 @@ export default function HomePage() {
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
 
+  // ✅ mobile sidebar open/close
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
@@ -835,13 +849,9 @@ export default function HomePage() {
       if (onlyBacklog && !toBool(g.backlog)) return false;
       if (onlyCompleted && !toBool(g.completed)) return false;
 
-      // ✅ status quick checkboxes (OR between them)
-      if (onlyNowPlaying || onlyAbandoned) {
-        const ok =
-          (onlyNowPlaying && statusIs(g, "Now Playing")) ||
-          (onlyAbandoned && statusIs(g, "Abandoned"));
-        if (!ok) return false;
-      }
+      // ✅ NEW status checkbox filters
+      if (onlyNowPlaying && g.status !== "Now Playing") return false;
+      if (onlyAbandoned && g.status !== "Abandoned") return false;
 
       if (selectedStatus && g.status !== selectedStatus) return false;
       if (selectedOwnership && g.ownership !== selectedOwnership) return false;
@@ -874,12 +884,9 @@ export default function HomePage() {
 
     return base.sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-      if (sortBy === "releaseDate")
-        return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted")
-        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
-      if (sortBy === "dateAdded")
-        return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
+      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
+      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
       return 0;
     });
   }, [
@@ -957,9 +964,7 @@ export default function HomePage() {
             transition: transform 160ms ease;
             border-right: 1px solid ${COLORS.border};
           }
-          .sidebar.open {
-            transform: translateX(0);
-          }
+          .sidebar.open { transform: translateX(0); }
           .overlay {
             position: fixed;
             inset: 0;
@@ -977,17 +982,12 @@ export default function HomePage() {
           }
           .mobileOnly { display: block !important; }
         }
-
         .mobileOnly { display: none; }
       `}</style>
 
       {filtersOpen && <div className="overlay" onClick={() => setFiltersOpen(false)} />}
 
-      <aside
-        className={`sidebar ${filtersOpen ? "open" : ""}`}
-        style={sidebarStyle}
-        aria-label="Filters"
-      >
+      <aside className={`sidebar ${filtersOpen ? "open" : ""}`} style={sidebarStyle} aria-label="Filters">
         <div
           style={{
             padding: "12px 10px",
@@ -1050,37 +1050,35 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>SORT</div>
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <SmallSelect
-                value={sortBy}
-                onChange={(v) =>
-                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")
-                }
-              >
+              <SmallSelect value={sortBy} onChange={(v) => setSortBy(v as any)}>
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
                 <option value="dateAdded">Date Added</option>
                 <option value="dateCompleted">Date Completed</option>
               </SmallSelect>
 
-              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as "asc" | "desc")}>
+              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as any)}>
                 <option value="asc">Asc</option>
                 <option value="desc">Desc</option>
               </SmallSelect>
             </div>
           </div>
 
-          {/* ✅ FILTER CHECKBOXES (layout exactly as requested) */}
+          {/* ✅ FILTER CHECKBOXES - aligned in a 2-column grid */}
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 6 }}>
-              FILTERS
-            </div>
-
-            <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 6 }}>FILTERS</div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                columnGap: 14,
+                rowGap: 6,
+                alignItems: "center",
+              }}
+            >
               <CheckboxRow label="Backlog" checked={onlyBacklog} onChange={setOnlyBacklog} />
               <CheckboxRow label="Now Playing" checked={onlyNowPlaying} onChange={setOnlyNowPlaying} />
-            </div>
 
-            <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
               <CheckboxRow label="Completed" checked={onlyCompleted} onChange={setOnlyCompleted} />
               <CheckboxRow label="Abandoned" checked={onlyAbandoned} onChange={setOnlyAbandoned} />
             </div>
@@ -1117,11 +1115,15 @@ export default function HomePage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
+          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={(y) => {
+            setSelectedYearsPlayed((prev) => prev.includes(y) ? prev.filter(v => v !== y) : [...prev, y]);
+          }} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
+          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={(g) => {
+            setSelectedGenres((prev) => prev.includes(g) ? prev.filter(v => v !== g) : [...prev, g]);
+          }} />
         </CollapsibleSection>
 
         <button
@@ -1198,7 +1200,17 @@ export default function HomePage() {
                     src={g.coverUrl}
                     alt={g.title}
                     loading="lazy"
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    referrerPolicy="no-referrer"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    onError={(e) => {
+                      // If something fails to load, hide broken image icon and show a placeholder
+                      const img = e.currentTarget;
+                      img.style.display = "none";
+                      const parent = img.parentElement;
+                      if (parent) {
+                        parent.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:${COLORS.muted};font-size:12px;">Cover failed</div>`;
+                      }
+                    }}
                   />
                 ) : (
                   <div
