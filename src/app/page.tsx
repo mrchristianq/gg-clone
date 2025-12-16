@@ -50,9 +50,15 @@ function splitTags(s: string) {
 }
 
 function pickCover(row: Row) {
-  const coverUrl = norm(row["CoverURL"]);
-  if (coverUrl) return coverUrl;
+  // ✅ Prefer your cached Drive URL first
+  const local = norm(row["LocalCoverURL"]);
+  if (local) return local;
 
+  // Fallback to IGDB cover url
+  const igdb = norm(row["CoverURL"]);
+  if (igdb) return igdb;
+
+  // Fallback to any legacy "Cover" URL if you used that
   const cover = norm(row["Cover"]);
   if (cover.startsWith("http")) return cover;
 
