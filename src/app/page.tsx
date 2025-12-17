@@ -1,14 +1,15 @@
-"use client";
+/* =============================================================================
+   Chris' Game Library — v1.0.6
+   Notes:
+   - Stats restored to 2-column layout; number color #168584; label to the right
+   - "Played in 2025" label shortened to "IN 2025"
+   - Top-right shows page item count (number only)
+   - Tabs: Games, Now Playing, Queued, Wishlist, Completed
+   - Facet expand/collapse icon changed from arrow to +/-
+   - Default cover size: 130 desktop, 100 mobile
+============================================================================= */
 
-/**
- * Chris' Game Library — v1.0.6
- * - Top tabs: Games, Now Playing, Queued, Wishlist, Completed
- * - Sidebar: Stats moved into left menu (below Sort, above Cover Size) with aligned labels + number color #168584
- * - Stats label “Played in {year}” -> “IN {year}”
- * - Mobile/desktop default cover size: 130 desktop, 100 mobile
- * - Top-right: page item count (number only) for current view
- * - Collapsible facets: arrow chevron -> plus/minus
- */
+"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
@@ -48,7 +49,7 @@ const COLORS = {
   rowActive: "rgba(96,165,250,0.14)",
   badgeBg: "rgba(255,255,255,0.06)",
   badgeBorder: "rgba(255,255,255,0.10)",
-  accent: "#22c55e", // green underline
+  accent: "#22c55e",
   statNumber: "#168584",
 };
 
@@ -65,7 +66,14 @@ function splitTags(s: string) {
 
 function toBool(v: string) {
   const s = norm(v).toLowerCase();
-  return s === "true" || s === "yes" || s === "y" || s === "1" || s === "checked" || s === "x";
+  return (
+    s === "true" ||
+    s === "yes" ||
+    s === "y" ||
+    s === "1" ||
+    s === "checked" ||
+    s === "x"
+  );
 }
 
 function toDateNum(s: string) {
@@ -76,7 +84,9 @@ function toDateNum(s: string) {
 }
 
 function uniqueSorted(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b)
+  );
 }
 
 function titleKey(title: string) {
@@ -135,28 +145,33 @@ function dedupeByTitle(rows: Game[]) {
     const yearPlayed = uniqueSorted([...existing.yearPlayed, ...g.yearPlayed]);
 
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
-    const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
+    const completed =
+      toBool(existing.completed) || toBool(g.completed) ? "true" : "";
 
     // releaseDate: earliest non-empty
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
     if (!aRel && bRel) releaseDate = g.releaseDate;
-    else if (aRel && bRel) releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
+    else if (aRel && bRel)
+      releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
     // dateAdded: earliest non-empty
     const aAdded = toDateNum(existing.dateAdded);
     const bAdded = toDateNum(g.dateAdded);
     let dateAdded = existing.dateAdded;
     if (!aAdded && bAdded) dateAdded = g.dateAdded;
-    else if (aAdded && bAdded) dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
+    else if (aAdded && bAdded)
+      dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
 
     // dateCompleted: latest non-empty
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
     if (!aComp && bComp) dateCompleted = g.dateCompleted;
-    else if (aComp && bComp) dateCompleted = aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
+    else if (aComp && bComp)
+      dateCompleted =
+        aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
 
     const status = existing.status || g.status;
     const ownership = existing.ownership || g.ownership;
@@ -194,7 +209,13 @@ function buildBaseForFacet(args: {
   selectedGenres: string[];
   selectedYearsPlayed: string[];
   activeTab: ActiveTab;
-  exclude: "platforms" | "status" | "ownership" | "format" | "genres" | "yearsPlayed";
+  exclude:
+    | "platforms"
+    | "status"
+    | "ownership"
+    | "format"
+    | "genres"
+    | "yearsPlayed";
 }) {
   const {
     games,
@@ -232,7 +253,9 @@ function buildBaseForFacet(args: {
     // Genres = AND
     if (exclude !== "genres" && selectedGenres.length) {
       const set = new Set(g.genres.map((x) => x.toLowerCase()));
-      for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
+      for (const sg of selectedGenres) {
+        if (!set.has(sg.toLowerCase())) return false;
+      }
     }
 
     // Years Played = OR
@@ -296,15 +319,17 @@ function PlusMinus({ open }: { open: boolean }) {
     <span
       style={{
         display: "inline-flex",
-        width: 16,
-        height: 16,
+        width: 18,
+        height: 18,
         alignItems: "center",
         justifyContent: "center",
+        borderRadius: 6,
+        border: `1px solid ${COLORS.border}`,
+        background: COLORS.input,
         color: COLORS.muted,
-        userSelect: "none",
-        fontSize: 14,
-        lineHeight: "16px",
         fontWeight: 900,
+        fontSize: 12,
+        userSelect: "none",
       }}
       aria-hidden
     >
@@ -403,8 +428,21 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -455,8 +493,21 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -537,25 +588,71 @@ function TabButton({
   );
 }
 
-function useIsMobile() {
+function StatCompact({
+  value,
+  label,
+}: {
+  value: number;
+  label: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "auto 1fr",
+        columnGap: 10,
+        alignItems: "baseline",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 900,
+          lineHeight: 1.05,
+          color: COLORS.statNumber,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {value}
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: COLORS.muted,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function useIsMobile(breakpointPx = 900) {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 900px)");
+    const mq = window.matchMedia(`(max-width: ${breakpointPx}px)`);
 
-    const update = () => setIsMobile(mq.matches);
-    update();
+    const apply = () => setIsMobile(mq.matches);
+    apply();
 
+    // Modern
     if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", update);
-      return () => mq.removeEventListener("change", update);
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
     }
 
-    // legacy Safari
-    const legacyMq = mq as unknown as { addListener: (fn: () => void) => void; removeListener: (fn: () => void) => void };
-    legacyMq.addListener(update);
-    return () => legacyMq.removeListener(update);
-  }, []);
+    // Legacy Safari
+    (mq as any).addListener?.(apply);
+    return () => (mq as any).removeListener?.(apply);
+  }, [breakpointPx]);
 
   return isMobile;
 }
@@ -566,8 +663,8 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const isMobile = useIsMobile();
-  const [tileSize, setTileSize] = useState(130); // will be set correctly on mount via effect below
+  const isMobile = useIsMobile(900);
+  const [tileSize, setTileSize] = useState(130);
 
   const [q, setQ] = useState("");
 
@@ -581,7 +678,9 @@ export default function HomePage() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">("releaseDate");
+  const [sortBy, setSortBy] = useState<
+    "title" | "releaseDate" | "dateCompleted" | "dateAdded"
+  >("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -593,14 +692,9 @@ export default function HomePage() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // ✅ default size: 130 desktop / 100 mobile (only set when user hasn't already moved slider)
+  // default tile size differs by breakpoint
   useEffect(() => {
-    setTileSize((prev) => {
-      const desired = isMobile ? 100 : 130;
-      // if they haven't touched it (prev is still one of our defaults), keep in sync
-      if (prev === 100 || prev === 130) return desired;
-      return prev;
-    });
+    setTileSize(isMobile ? 100 : 130);
   }, [isMobile]);
 
   useEffect(() => {
@@ -666,9 +760,12 @@ export default function HomePage() {
 
     return base.sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
-      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
+      if (sortBy === "releaseDate")
+        return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+      if (sortBy === "dateCompleted")
+        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateAdded")
+        return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
   }, [
@@ -685,7 +782,7 @@ export default function HomePage() {
     sortDir,
   ]);
 
-  // Facet counts
+  // Facet counts (exclude each facet itself)
   const platformCounts = useMemo(() => {
     const base = buildBaseForFacet({
       games,
@@ -700,7 +797,17 @@ export default function HomePage() {
       exclude: "platforms",
     });
     return countByTagList(base, (g) => g.platforms);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    activeTab,
+  ]);
 
   const statusCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -716,7 +823,17 @@ export default function HomePage() {
       exclude: "status",
     });
     return countByKey(base, (g) => g.status);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    activeTab,
+  ]);
 
   const ownershipCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -732,7 +849,17 @@ export default function HomePage() {
       exclude: "ownership",
     });
     return countByKey(base, (g) => g.ownership);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    activeTab,
+  ]);
 
   const formatCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -748,7 +875,17 @@ export default function HomePage() {
       exclude: "format",
     });
     return countByKey(base, (g) => g.format);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    activeTab,
+  ]);
 
   const yearsPlayedCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -764,7 +901,17 @@ export default function HomePage() {
       exclude: "yearsPlayed",
     });
     return countByTagList(base, (g) => g.yearPlayed);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    activeTab,
+  ]);
 
   const genreCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -780,14 +927,28 @@ export default function HomePage() {
       exclude: "genres",
     });
     return countByTagList(base, (g) => g.genres);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games,
+    q,
+    selectedPlatform,
+    selectedStatus,
+    selectedOwnership,
+    selectedFormat,
+    selectedGenres,
+    selectedYearsPlayed,
+    activeTab,
+  ]);
 
   function toggleGenre(genre: string) {
-    setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
+    setSelectedGenres((prev) =>
+      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
+    );
   }
 
   function toggleYearPlayed(year: string) {
-    setSelectedYearsPlayed((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
+    setSelectedYearsPlayed((prev) =>
+      prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]
+    );
   }
 
   function clearFilters() {
@@ -803,11 +964,12 @@ export default function HomePage() {
   const headerAvatarUrl =
     "https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no";
 
+  // Stats (global, not filtered)
   const gamesTotal = games.length;
   const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
   const queuedTotal = games.filter((g) => norm(g.status) === "Queued").length;
   const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length;
-  const completedTotal = games.filter((g) => toBool(g.completed)).length;
+
   const year = new Date().getFullYear();
   const playedThisYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
 
@@ -823,16 +985,6 @@ export default function HomePage() {
     scrollbarWidth: "none",
     msOverflowStyle: "none",
   };
-
-  // Stats block (aligned labels)
-  const statsRows: Array<{ label: string; value: number }> = [
-    { label: "Games", value: gamesTotal },
-    { label: "Now Playing", value: nowPlayingTotal },
-    { label: "Queued", value: queuedTotal },
-    { label: "Wishlist", value: wishlistTotal },
-    { label: "Completed", value: completedTotal },
-    { label: `IN ${year}`, value: playedThisYear },
-  ];
 
   const pageCount = filtered.length;
 
@@ -941,70 +1093,42 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>SORT</div>
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <SmallSelect value={sortBy} onChange={(v) => setSortBy(v as any)}>
+              <SmallSelect
+                value={sortBy}
+                onChange={(v) =>
+                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")
+                }
+              >
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
                 <option value="dateAdded">Date Added</option>
                 <option value="dateCompleted">Date Completed</option>
               </SmallSelect>
 
-              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as any)}>
+              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as "asc" | "desc")}>
                 <option value="asc">Asc</option>
                 <option value="desc">Desc</option>
               </SmallSelect>
             </div>
           </div>
 
-          {/* ✅ Stats moved here (below sort, above cover size) */}
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 10px",
-              borderRadius: 14,
-              background: COLORS.panelTopFade,
-              border: `1px solid ${COLORS.border}`,
-            }}
-          >
+          {/* Stats block (2 columns, tight) */}
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>STATS</div>
             <div
               style={{
-                fontSize: 11,
-                fontWeight: 800,
-                color: COLORS.muted,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                marginBottom: 8,
-              }}
-            >
-              STATS
-            </div>
-
-            <div
-              style={{
+                marginTop: 8,
                 display: "grid",
-                gridTemplateColumns: "auto 1fr",
-                columnGap: 12,
-                rowGap: 8,
-                alignItems: "center",
+                gridTemplateColumns: "1fr 1fr",
+                columnGap: 18,
+                rowGap: 10,
               }}
             >
-              {statsRows.map((r) => (
-                <React.Fragment key={r.label}>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.statNumber, lineHeight: 1 }}>
-                    {r.value}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: COLORS.muted,
-                      whiteSpace: "nowrap",
-                      lineHeight: 1.1,
-                    }}
-                  >
-                    {r.label}
-                  </div>
-                </React.Fragment>
-              ))}
+              <StatCompact value={gamesTotal} label="GAMES" />
+              <StatCompact value={playedThisYear} label={`in ${year}`} />
+              <StatCompact value={nowPlayingTotal} label="NOW PLAYING" />
+              <StatCompact value={queuedTotal} label="QUEUED" />
+              <StatCompact value={wishlistTotal} label="WISHLIST" />
             </div>
           </div>
 
@@ -1023,27 +1147,57 @@ export default function HomePage() {
         </div>
 
         <CollapsibleSection title="Platform" open={openPlatform} setOpen={setOpenPlatform}>
-          <FacetRowsSingle options={platforms} counts={platformCounts} selected={selectedPlatform} onSelect={setSelectedPlatform} />
+          <FacetRowsSingle
+            options={platforms}
+            counts={platformCounts}
+            selected={selectedPlatform}
+            onSelect={setSelectedPlatform}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Status" open={openStatus} setOpen={setOpenStatus}>
-          <FacetRowsSingle options={statuses} counts={statusCounts} selected={selectedStatus} onSelect={setSelectedStatus} />
+          <FacetRowsSingle
+            options={statuses}
+            counts={statusCounts}
+            selected={selectedStatus}
+            onSelect={setSelectedStatus}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
+          <FacetRowsSingle
+            options={ownerships}
+            counts={ownershipCounts}
+            selected={selectedOwnership}
+            onSelect={setSelectedOwnership}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
-          <FacetRowsSingle options={formats} counts={formatCounts} selected={selectedFormat} onSelect={setSelectedFormat} />
+          <FacetRowsSingle
+            options={formats}
+            counts={formatCounts}
+            selected={selectedFormat}
+            onSelect={setSelectedFormat}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
+          <FacetRowsMulti
+            options={allYearsPlayed}
+            counts={yearsPlayedCounts}
+            selected={selectedYearsPlayed}
+            onToggle={toggleYearPlayed}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
+          <FacetRowsMulti
+            options={allGenres}
+            counts={genreCounts}
+            selected={selectedGenres}
+            onToggle={toggleGenre}
+          />
         </CollapsibleSection>
 
         <button
@@ -1087,12 +1241,11 @@ export default function HomePage() {
             >
               Filters
             </button>
-
-            {/* Top-right count on mobile too */}
+            {/* number-only page count */}
             <div
               style={{
-                minWidth: 34,
-                height: 28,
+                minWidth: 28,
+                height: 22,
                 padding: "0 10px",
                 display: "inline-flex",
                 alignItems: "center",
@@ -1104,14 +1257,13 @@ export default function HomePage() {
                 fontSize: 12,
                 fontWeight: 900,
               }}
-              title="Items in view"
             >
               {pageCount}
             </div>
           </div>
         </div>
 
-        {/* Top tabs + top-right count */}
+        {/* Top nav + page count (number only) */}
         <div
           style={{
             display: "flex",
@@ -1123,17 +1275,25 @@ export default function HomePage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+            <TabButton
+              label="Now Playing"
+              active={activeTab === "nowPlaying"}
+              onClick={() => setActiveTab("nowPlaying")}
+            />
             <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
             <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+            <TabButton
+              label="Completed"
+              active={activeTab === "completed"}
+              onClick={() => setActiveTab("completed")}
+            />
           </div>
 
-          {/* ✅ number only */}
+          {/* number-only count */}
           <div
             style={{
-              minWidth: 36,
-              height: 30,
+              minWidth: 34,
+              height: 26,
               padding: "0 10px",
               display: "inline-flex",
               alignItems: "center",
@@ -1145,7 +1305,7 @@ export default function HomePage() {
               fontSize: 13,
               fontWeight: 900,
             }}
-            title="Items in view"
+            title="Items on this page"
           >
             {pageCount}
           </div>
