@@ -1,4 +1,4 @@
-/* =============================================================================
+const completedTotal = games.filter((g) => toBool(g.completed)).length;/* =============================================================================
    Chris' Game Library — v1.0.6
    Notes:
    - Stats restored to 2-column layout; number color #168584; label to the right
@@ -969,7 +969,7 @@ export default function HomePage() {
   const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
   const queuedTotal = games.filter((g) => norm(g.status) === "Queued").length;
   const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length;
-
+  const completedTotal = games.filter((g) => toBool(g.completed)).length;
   const year = new Date().getFullYear();
   const playedThisYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
 
@@ -1129,6 +1129,9 @@ export default function HomePage() {
               <StatCompact value={nowPlayingTotal} label="NOW PLAYING" />
               <StatCompact value={queuedTotal} label="QUEUED" />
               <StatCompact value={wishlistTotal} label="WISHLIST" />
+              <StatCompact value={completedTotal} label="Completed" />
+
+               
             </div>
           </div>
 
