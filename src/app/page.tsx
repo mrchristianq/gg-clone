@@ -1,13 +1,15 @@
-/**
- * Chris' Game Library — v1.0.5
- * Notes:
- * - Stats: align labels consistently (fixed-width number column) + keep labels single-line
- * - Default cover size: 130 on desktop, 100 on mobile (auto-detect + resize aware)
- */
-
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+/**
+ * Chris' Game Library — v1.0.5
+ *
+ * Changes:
+ * - Fix Vercel build: removed unused @ts-expect-error (no legacy matchMedia listeners)
+ * - Sidebar stats: labels aligned consistently (grid layout like reference screenshot)
+ * - Default cover size: Desktop 130px, Mobile 100px (only auto-sets until user moves slider)
+ */
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 
 type Row = Record<string, string>;
@@ -45,8 +47,8 @@ const COLORS = {
   rowActive: "rgba(96,165,250,0.14)",
   badgeBg: "rgba(255,255,255,0.06)",
   badgeBorder: "rgba(255,255,255,0.10)",
-  accent: "#22c55e", // green underline
-  statNumber: "#168584", // requested number color
+  accent: "#22c55e", // underline on active top tab
+  statNumber: "#168584", // ✅ requested stat number color
 };
 
 function norm(v: unknown) {
@@ -227,9 +229,7 @@ function buildBaseForFacet(args: {
     // Genres = AND
     if (exclude !== "genres" && selectedGenres.length) {
       const set = new Set(g.genres.map((x) => x.toLowerCase()));
-      for (const sg of selectedGenres) {
-        if (!set.has(sg.toLowerCase())) return false;
-      }
+      for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
     }
 
     // Years Played = OR
@@ -288,18 +288,20 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-function ChevronPlus({ open }: { open: boolean }) {
+// plus sign for collapsed/expanded
+function Plus({ open }: { open: boolean }) {
   return (
     <span
       style={{
         display: "inline-flex",
-        width: 16,
-        height: 16,
+        width: 18,
+        height: 18,
         alignItems: "center",
         justifyContent: "center",
         color: COLORS.muted,
         userSelect: "none",
-        fontSize: 14,
+        fontSize: 16,
+        lineHeight: "18px",
         transform: open ? "rotate(45deg)" : "rotate(0deg)",
         transition: "transform 120ms ease",
       }}
@@ -339,22 +341,22 @@ function CollapsibleSection({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "4px 6px",
-            borderRadius: 10,
+            padding: "10px 8px",
+            borderRadius: 12,
           }}
         >
           <div
             style={{
               fontSize: 11,
-              fontWeight: 800,
+              fontWeight: 900,
               color: COLORS.muted,
               textTransform: "uppercase",
-              letterSpacing: "0.06em",
+              letterSpacing: "0.08em",
             }}
           >
             {title}
           </div>
-          <ChevronPlus open={open} />
+          <Plus open={open} />
         </div>
       </button>
 
@@ -389,9 +391,9 @@ function FacetRowsSingle({
               border: "none",
               background: active ? COLORS.rowActive : "transparent",
               color: COLORS.text,
-              padding: "3px 8px",
+              padding: "6px 8px",
               cursor: "pointer",
-              borderRadius: 8,
+              borderRadius: 10,
             }}
             onMouseEnter={(e) => {
               if (!active) e.currentTarget.style.background = COLORS.rowHover;
@@ -400,8 +402,8 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 800 : 550, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -441,9 +443,9 @@ function FacetRowsMulti({
               border: "none",
               background: active ? COLORS.rowActive : "transparent",
               color: COLORS.text,
-              padding: "3px 8px",
+              padding: "6px 8px",
               cursor: "pointer",
-              borderRadius: 8,
+              borderRadius: 10,
             }}
             onMouseEnter={(e) => {
               if (!active) e.currentTarget.style.background = COLORS.rowHover;
@@ -452,8 +454,8 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 800 : 550, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -534,26 +536,24 @@ function TabButton({
   );
 }
 
-function StatRow({
-  value,
-  label,
-  numberWidth = 44,
-}: {
-  value: number;
-  label: string;
-  numberWidth?: number;
-}) {
+/** ✅ Sidebar stat row: number + label aligned (single line labels) */
+function StatRow({ value, label }: { value: number; label: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "44px 1fr",
+        columnGap: 10,
+        alignItems: "baseline",
+      }}
+    >
       <div
         style={{
-          width: numberWidth,
-          textAlign: "right",
           fontSize: 18,
           fontWeight: 900,
           color: COLORS.statNumber,
           lineHeight: 1.05,
-          flex: "0 0 auto",
+          textAlign: "right",
         }}
       >
         {value}
@@ -561,17 +561,12 @@ function StatRow({
       <div
         style={{
           fontSize: 11,
-          fontWeight: 800,
+          fontWeight: 900,
           color: COLORS.muted,
-          letterSpacing: "0.04em",
+          letterSpacing: "0.06em",
           textTransform: "uppercase",
           whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          lineHeight: 1.2,
-          flex: "1 1 auto",
         }}
-        title={label}
       >
         {label}
       </div>
@@ -585,7 +580,10 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tileSize, setTileSize] = useState(130); // v1.0.5 default; will auto-adjust on mount
+  // ✅ v1.0.5 default sizes (desktop 130 / mobile 100)
+  const [tileSize, setTileSize] = useState(130);
+  const userTouchedTileSize = useRef(false);
+
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -596,9 +594,13 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed">("games");
+  const [activeTab, setActiveTab] = useState<
+    "games" | "nowPlaying" | "queued" | "wishlist" | "completed"
+  >("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">("releaseDate");
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">(
+    "releaseDate"
+  );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -608,29 +610,22 @@ export default function HomePage() {
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
 
-  const [filtersOpen, setFiltersOpen] = useState(false); // mobile drawer
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // ✅ v1.0.5: default cover size is 130 desktop / 100 mobile, and updates on resize
+  // ✅ detect mobile and set initial tile size (without TS legacy listeners)
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
     const mq = window.matchMedia("(max-width: 900px)");
 
     const apply = () => {
+      if (userTouchedTileSize.current) return;
       setTileSize(mq.matches ? 100 : 130);
     };
 
     apply();
-
-    // Safari fallback: addListener/removeListener
-    const onChange = () => apply();
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", onChange);
-      return () => mq.removeEventListener("change", onChange);
-    } else {
-      // @ts-expect-error legacy
-      mq.addListener(onChange);
-      // @ts-expect-error legacy
-      return () => mq.removeListener(onChange);
-    }
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
   useEffect(() => {
@@ -664,6 +659,7 @@ export default function HomePage() {
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
+      // Tabs
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
       if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
       if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
@@ -832,13 +828,13 @@ export default function HomePage() {
   const headerAvatarUrl =
     "https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no";
 
-  const year = new Date().getFullYear();
-
   const gamesTotal = games.length;
   const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
   const queuedTotal = games.filter((g) => norm(g.status) === "Queued").length;
   const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length;
   const completedTotal = games.filter((g) => toBool(g.completed)).length;
+
+  const year = new Date().getFullYear();
   const playedThisYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
 
   const sidebarStyle: React.CSSProperties = {
@@ -870,9 +866,7 @@ export default function HomePage() {
             transition: transform 160ms ease;
             border-right: 1px solid ${COLORS.border};
           }
-          .sidebar.open {
-            transform: translateX(0);
-          }
+          .sidebar.open { transform: translateX(0); }
           .overlay {
             position: fixed;
             inset: 0;
@@ -890,8 +884,8 @@ export default function HomePage() {
           }
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
-          .topTabsWrap { gap: 10px !important; }
-          .topTabsWrap button { font-size: 13px !important; padding: 6px 4px !important; }
+          .topTabs { gap: 10px !important; }
+          .topTabs button { font-size: 13px !important; padding: 8px 4px !important; }
         }
         .mobileOnly { display: none; }
       `}</style>
@@ -959,7 +953,7 @@ export default function HomePage() {
           />
 
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>SORT</div>
+            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, letterSpacing: "0.08em" }}>SORT</div>
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <SmallSelect
                 value={sortBy}
@@ -978,43 +972,34 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ✅ STATS (aligned labels, one-line) */}
+          {/* ✅ STATS (aligned like screenshot) */}
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 8 }}>STATS</div>
+            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, letterSpacing: "0.08em" }}>STATS</div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                columnGap: 14,
-                rowGap: 10,
-              }}
-            >
-              {/* left column */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
-                <StatRow value={gamesTotal} label="Games" numberWidth={46} />
-                <StatRow value={queuedTotal} label="Queued" numberWidth={46} />
-                <StatRow value={completedTotal} label="Completed" numberWidth={46} />
-              </div>
-
-              {/* right column */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
-                <StatRow value={nowPlayingTotal} label="Now Playing" numberWidth={46} />
-                <StatRow value={wishlistTotal} label="Wishlist" numberWidth={46} />
-                <StatRow value={playedThisYear} label={`Played in ${year}`} numberWidth={46} />
-              </div>
+            <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 18, rowGap: 10 }}>
+              <StatRow value={gamesTotal} label="Games" />
+              <StatRow value={playedThisYear} label={`Played in ${year}`} />
+              <StatRow value={nowPlayingTotal} label="Now Playing" />
+              <StatRow value={wishlistTotal} label="Wishlist" />
+              <StatRow value={queuedTotal} label="Queued" />
+              <StatRow value={completedTotal} label="Completed" />
             </div>
           </div>
 
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>COVER SIZE</div>
+            <div style={{ fontSize: 11, fontWeight: 900, color: COLORS.muted, letterSpacing: "0.08em" }}>
+              COVER SIZE
+            </div>
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
             <input
               type="range"
               min={90}
               max={260}
               value={tileSize}
-              onChange={(e) => setTileSize(Number(e.target.value))}
+              onChange={(e) => {
+                userTouchedTileSize.current = true;
+                setTileSize(Number(e.target.value));
+              }}
               style={{ width: "100%" }}
             />
           </div>
@@ -1029,12 +1014,7 @@ export default function HomePage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle
-            options={ownerships}
-            counts={ownershipCounts}
-            selected={selectedOwnership}
-            onSelect={setSelectedOwnership}
-          />
+          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
@@ -1042,12 +1022,7 @@ export default function HomePage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti
-            options={allYearsPlayed}
-            counts={yearsPlayedCounts}
-            selected={selectedYearsPlayed}
-            onToggle={toggleYearPlayed}
-          />
+          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
@@ -1065,7 +1040,7 @@ export default function HomePage() {
             border: `1px solid ${COLORS.border}`,
             color: COLORS.text,
             cursor: "pointer",
-            fontWeight: 800,
+            fontWeight: 900,
             fontSize: 12,
           }}
         >
@@ -1089,7 +1064,7 @@ export default function HomePage() {
                 border: `1px solid ${COLORS.border}`,
                 color: COLORS.text,
                 cursor: "pointer",
-                fontWeight: 800,
+                fontWeight: 900,
                 fontSize: 12,
               }}
             >
@@ -1100,23 +1075,14 @@ export default function HomePage() {
         </div>
 
         {/* Top nav */}
-        <div
-          className="topTabsWrap"
-          style={{
-            display: "flex",
-            alignItems: "flex-end",
-            gap: 14,
-            marginBottom: 14,
-            flexWrap: "nowrap",
-            overflowX: "auto",
-            scrollbarWidth: "none",
-          }}
-        >
-          <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-          <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-          <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
-          <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-          <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+        <div style={{ marginBottom: 14 }}>
+          <div className="topTabs" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+            <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+            <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+          </div>
         </div>
 
         {loading ? (
