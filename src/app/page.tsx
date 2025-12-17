@@ -1,9 +1,15 @@
 /**
- * GG Clone — Web App
- * Version: v1.0.1
+ * GG Clone — Home Page
+ * Version: 1.1.0
  * Notes:
- *  - Top tabs: Games, Now Playing, Backlog (filters Status="Queued"), Wishlist, Completed (Completed=true)
- *  - Sidebar collapsibles: change chevron arrow to plus/minus icon
+ * - Top tabs updated to: Games, Now Playing, Queued, Wishlist, Completed
+ * - Tab logic:
+ *   - Now Playing => Status === "Now Playing"
+ *   - Queued      => Status === "Queued"
+ *   - Wishlist    => Ownership === "Wishlist"
+ *   - Completed   => Completed checkbox/flag === true
+ * - Collapsible section toggle icon changed from arrow to plus/minus
+ * - Filters panel defaults to closed on mobile (already set via filtersOpen=false)
  */
 
 "use client";
@@ -206,7 +212,7 @@ function buildBaseForFacet(args: {
   onlyCompleted: boolean;
   onlyNowPlaying: boolean;
   onlyAbandoned: boolean;
-  activeTab: "games" | "nowPlaying" | "backlog" | "wishlist" | "completed";
+  activeTab: "games" | "nowPlaying" | "queued" | "wishlist" | "completed";
   exclude:
     | "platforms"
     | "status"
@@ -239,7 +245,7 @@ function buildBaseForFacet(args: {
 
     // Top tabs
     if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
-    if (activeTab === "backlog" && norm(g.status) !== "Queued") return false; // per your request
+    if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
     if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
     if (activeTab === "completed" && !toBool(g.completed)) return false;
 
@@ -250,7 +256,8 @@ function buildBaseForFacet(args: {
     if (onlyAbandoned && norm(g.status) !== "Abandoned") return false;
 
     if (exclude !== "status" && selectedStatus && g.status !== selectedStatus) return false;
-    if (exclude !== "ownership" && selectedOwnership && g.ownership !== selectedOwnership) return false;
+    if (exclude !== "ownership" && selectedOwnership && g.ownership !== selectedOwnership)
+      return false;
     if (exclude !== "format" && selectedFormat && g.format !== selectedFormat) return false;
 
     if (exclude !== "platforms" && selectedPlatform) {
@@ -322,26 +329,27 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-// ✅ plus/minus icon (replaces arrow)
 function PlusMinus({ open }: { open: boolean }) {
   return (
     <span
       style={{
-        display: "inline-flex",
         width: 18,
         height: 18,
+        display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
+        borderRadius: 6,
+        border: `1px solid ${COLORS.border}`,
+        background: COLORS.input,
         color: COLORS.muted,
-        userSelect: "none",
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: 900,
+        userSelect: "none",
         lineHeight: 1,
       }}
       aria-hidden
-      title={open ? "Collapse" : "Expand"}
     >
-      {open ? "−" : "+"}
+      {open ? "–" : "+"}
     </span>
   );
 }
@@ -599,7 +607,6 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className="topTab"
       style={{
         border: "none",
         background: "transparent",
@@ -680,7 +687,7 @@ export default function HomePage() {
   const [onlyAbandoned, setOnlyAbandoned] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
-    "games" | "nowPlaying" | "backlog" | "wishlist" | "completed"
+    "games" | "nowPlaying" | "queued" | "wishlist" | "completed"
   >("games");
 
   const [sortBy, setSortBy] = useState<
@@ -695,7 +702,7 @@ export default function HomePage() {
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
 
-  const [filtersOpen, setFiltersOpen] = useState(false); // default closed
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -730,7 +737,7 @@ export default function HomePage() {
 
       // Top tabs
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
-      if (activeTab === "backlog" && norm(g.status) !== "Queued") return false; // backlog tab = queued status
+      if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
       if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
       if (activeTab === "completed" && !toBool(g.completed)) return false;
 
@@ -749,13 +756,11 @@ export default function HomePage() {
         if (!set.has(selectedPlatform.toLowerCase())) return false;
       }
 
-      // Genres = AND
       if (selectedGenres.length) {
         const set = new Set(g.genres.map((x) => x.toLowerCase()));
         for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
       }
 
-      // Years Played = OR
       if (selectedYearsPlayed.length) {
         const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
         const any = selectedYearsPlayed.some((y) => set.has(y.toLowerCase()));
@@ -818,7 +823,7 @@ export default function HomePage() {
     selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
     selectedGenres, selectedYearsPlayed,
     onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned,
-    activeTab
+    activeTab,
   ]);
 
   const statusCounts = useMemo(() => {
@@ -844,7 +849,7 @@ export default function HomePage() {
     selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
     selectedGenres, selectedYearsPlayed,
     onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned,
-    activeTab
+    activeTab,
   ]);
 
   const ownershipCounts = useMemo(() => {
@@ -870,7 +875,7 @@ export default function HomePage() {
     selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
     selectedGenres, selectedYearsPlayed,
     onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned,
-    activeTab
+    activeTab,
   ]);
 
   const formatCounts = useMemo(() => {
@@ -896,7 +901,7 @@ export default function HomePage() {
     selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
     selectedGenres, selectedYearsPlayed,
     onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned,
-    activeTab
+    activeTab,
   ]);
 
   const yearsPlayedCounts = useMemo(() => {
@@ -922,7 +927,7 @@ export default function HomePage() {
     selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
     selectedGenres, selectedYearsPlayed,
     onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned,
-    activeTab
+    activeTab,
   ]);
 
   const genreCounts = useMemo(() => {
@@ -948,7 +953,7 @@ export default function HomePage() {
     selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
     selectedGenres, selectedYearsPlayed,
     onlyBacklog, onlyCompleted, onlyNowPlaying, onlyAbandoned,
-    activeTab
+    activeTab,
   ]);
 
   function toggleGenre(genre: string) {
@@ -981,8 +986,11 @@ export default function HomePage() {
     "https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no";
 
   const gamesTotal = games.length;
+  const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
   const queuedTotal = games.filter((g) => norm(g.status) === "Queued").length;
   const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length;
+  const completedTotal = games.filter((g) => toBool(g.completed)).length;
+
   const year = new Date().getFullYear();
   const playedThisYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
 
@@ -1004,7 +1012,6 @@ export default function HomePage() {
       <style>{`
         aside::-webkit-scrollbar { display: none; }
 
-        /* make the 5 top tabs fit better on mobile */
         @media (max-width: 900px) {
           .sidebar {
             position: fixed !important;
@@ -1016,15 +1023,15 @@ export default function HomePage() {
             transition: transform 160ms ease;
             border-right: 1px solid ${COLORS.border};
           }
-          .sidebar.open {
-            transform: translateX(0);
-          }
+          .sidebar.open { transform: translateX(0); }
+
           .overlay {
             position: fixed;
             inset: 0;
             background: rgba(0,0,0,0.55);
             z-index: 40;
           }
+
           .mobileTopbar {
             position: sticky;
             top: 0;
@@ -1034,20 +1041,25 @@ export default function HomePage() {
             border-bottom: 1px solid ${COLORS.border};
             margin: -18px -18px 14px -18px;
           }
+
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
 
-          .topTabsWrap {
+          /* Make the top tabs fit on one row on mobile */
+          .topTabs {
+            gap: 8px !important;
+            flex-wrap: nowrap !important;
             overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
             scrollbar-width: none;
           }
-          .topTabsWrap::-webkit-scrollbar { display: none; }
-          .topTab {
-            font-size: 12px !important;
-            padding: 6px 6px !important;
+          .topTabs::-webkit-scrollbar { display: none; }
+          .topTabs button {
+            font-size: 13px !important;
+            padding: 8px 4px !important;
           }
+          .topStats { display: none !important; }
         }
+
         .mobileOnly { display: none; }
       `}</style>
 
@@ -1202,7 +1214,11 @@ export default function HomePage() {
             options={allYearsPlayed}
             counts={yearsPlayedCounts}
             selected={selectedYearsPlayed}
-            onToggle={toggleYearPlayed}
+            onToggle={(yearVal) =>
+              setSelectedYearsPlayed((prev) =>
+                prev.includes(yearVal) ? prev.filter((y) => y !== yearVal) : [...prev, yearVal]
+              )
+            }
           />
         </CollapsibleSection>
 
@@ -1211,7 +1227,11 @@ export default function HomePage() {
             options={allGenres}
             counts={genreCounts}
             selected={selectedGenres}
-            onToggle={toggleGenre}
+            onToggle={(genreVal) =>
+              setSelectedGenres((prev) =>
+                prev.includes(genreVal) ? prev.filter((g) => g !== genreVal) : [...prev, genreVal]
+              )
+            }
           />
         </CollapsibleSection>
 
@@ -1256,9 +1276,7 @@ export default function HomePage() {
             >
               Filters
             </button>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>
-              {filtered.length} games
-            </div>
+            <div style={{ fontSize: 12, color: COLORS.muted }}>{filtered.length} games</div>
           </div>
         </div>
 
@@ -1272,18 +1290,28 @@ export default function HomePage() {
             marginBottom: 14,
           }}
         >
-          <div className="topTabsWrap" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div className="topTabs" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-            <TabButton label="Backlog" active={activeTab === "backlog"} onClick={() => setActiveTab("backlog")} />
+            <TabButton
+              label="Now Playing"
+              active={activeTab === "nowPlaying"}
+              onClick={() => setActiveTab("nowPlaying")}
+            />
+            <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
             <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+            <TabButton
+              label="Completed"
+              active={activeTab === "completed"}
+              onClick={() => setActiveTab("completed")}
+            />
           </div>
 
-          <div style={{ display: "flex", gap: 18 }}>
+          <div className="topStats" style={{ display: "flex", gap: 18 }}>
             <Stat value={gamesTotal} label="Games" />
+            <Stat value={nowPlayingTotal} label="Now Playing" />
             <Stat value={queuedTotal} label="Queued" />
             <Stat value={wishlistTotal} label="Wishlist" />
+            <Stat value={completedTotal} label="Completed" />
             <Stat value={playedThisYear} label={`Played in ${year}`} />
           </div>
         </div>
@@ -1315,7 +1343,12 @@ export default function HomePage() {
                     src={g.coverUrl}
                     alt={g.title}
                     loading="lazy"
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      display: "block",
+                    }}
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.display = "none";
                     }}
