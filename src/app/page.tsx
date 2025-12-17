@@ -1,11 +1,8 @@
 /**
- * GG Clone — Version 1.0.4
+ * Chris' Game Library — v1.0.5
  * Notes:
- * - Sidebar STATS redesigned: number on left, label on right (single-line), tighter layout
- * - Stat number color set to #168584
- * - Removed sidebar checkbox filters for Backlog/Completed/Now Playing/Abandoned (handled by top tabs now)
- * - Top tabs: Games, Now Playing, Queued, Wishlist, Completed
- * - Collapsible facet toggles use + / – (instead of arrow)
+ * - Stats: align labels consistently (fixed-width number column) + keep labels single-line
+ * - Default cover size: 130 on desktop, 100 on mobile (auto-detect + resize aware)
  */
 
 "use client";
@@ -49,7 +46,7 @@ const COLORS = {
   badgeBg: "rgba(255,255,255,0.06)",
   badgeBorder: "rgba(255,255,255,0.10)",
   accent: "#22c55e", // green underline
-  statNumber: "#168584",
+  statNumber: "#168584", // requested number color
 };
 
 function norm(v: unknown) {
@@ -230,7 +227,9 @@ function buildBaseForFacet(args: {
     // Genres = AND
     if (exclude !== "genres" && selectedGenres.length) {
       const set = new Set(g.genres.map((x) => x.toLowerCase()));
-      for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
+      for (const sg of selectedGenres) {
+        if (!set.has(sg.toLowerCase())) return false;
+      }
     }
 
     // Years Played = OR
@@ -289,22 +288,24 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-function PlusMinus({ open }: { open: boolean }) {
+function ChevronPlus({ open }: { open: boolean }) {
   return (
     <span
       style={{
-        display: "inline-block",
+        display: "inline-flex",
         width: 16,
-        textAlign: "center",
+        height: 16,
+        alignItems: "center",
+        justifyContent: "center",
         color: COLORS.muted,
         userSelect: "none",
         fontSize: 14,
-        fontWeight: 900,
-        lineHeight: "16px",
+        transform: open ? "rotate(45deg)" : "rotate(0deg)",
+        transition: "transform 120ms ease",
       }}
       aria-hidden
     >
-      {open ? "–" : "+"}
+      +
     </span>
   );
 }
@@ -338,7 +339,7 @@ function CollapsibleSection({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "6px 6px",
+            padding: "4px 6px",
             borderRadius: 10,
           }}
         >
@@ -353,7 +354,7 @@ function CollapsibleSection({
           >
             {title}
           </div>
-          <PlusMinus open={open} />
+          <ChevronPlus open={open} />
         </div>
       </button>
 
@@ -533,19 +534,28 @@ function TabButton({
   );
 }
 
-function StatRow({ value, label }: { value: number; label: string }) {
+function StatRow({
+  value,
+  label,
+  numberWidth = 44,
+}: {
+  value: number;
+  label: string;
+  numberWidth?: number;
+}) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "auto 1fr",
-        alignItems: "baseline",
-        columnGap: 10,
-        rowGap: 0,
-        minWidth: 0,
-      }}
-    >
-      <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.statNumber, lineHeight: 1.1 }}>
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
+      <div
+        style={{
+          width: numberWidth,
+          textAlign: "right",
+          fontSize: 18,
+          fontWeight: 900,
+          color: COLORS.statNumber,
+          lineHeight: 1.05,
+          flex: "0 0 auto",
+        }}
+      >
         {value}
       </div>
       <div
@@ -558,6 +568,8 @@ function StatRow({ value, label }: { value: number; label: string }) {
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
+          lineHeight: 1.2,
+          flex: "1 1 auto",
         }}
         title={label}
       >
@@ -573,7 +585,7 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tileSize, setTileSize] = useState(100); // default 100
+  const [tileSize, setTileSize] = useState(130); // v1.0.5 default; will auto-adjust on mount
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -596,7 +608,30 @@ export default function HomePage() {
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
 
-  const [filtersOpen, setFiltersOpen] = useState(false); // default closed
+  const [filtersOpen, setFiltersOpen] = useState(false); // mobile drawer
+
+  // ✅ v1.0.5: default cover size is 130 desktop / 100 mobile, and updates on resize
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+
+    const apply = () => {
+      setTileSize(mq.matches ? 100 : 130);
+    };
+
+    apply();
+
+    // Safari fallback: addListener/removeListener
+    const onChange = () => apply();
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    } else {
+      // @ts-expect-error legacy
+      mq.addListener(onChange);
+      // @ts-expect-error legacy
+      return () => mq.removeListener(onChange);
+    }
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -643,13 +678,11 @@ export default function HomePage() {
         if (!set.has(selectedPlatform.toLowerCase())) return false;
       }
 
-      // Genres = AND
       if (selectedGenres.length) {
         const set = new Set(g.genres.map((x) => x.toLowerCase()));
         for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
       }
 
-      // Years Played = OR
       if (selectedYearsPlayed.length) {
         const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
         const any = selectedYearsPlayed.some((y) => set.has(y.toLowerCase()));
@@ -696,17 +729,7 @@ export default function HomePage() {
       exclude: "platforms",
     });
     return countByTagList(base, (g) => g.platforms);
-  }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    activeTab,
-  ]);
+  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
 
   const statusCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -722,17 +745,7 @@ export default function HomePage() {
       exclude: "status",
     });
     return countByKey(base, (g) => g.status);
-  }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    activeTab,
-  ]);
+  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
 
   const ownershipCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -748,17 +761,7 @@ export default function HomePage() {
       exclude: "ownership",
     });
     return countByKey(base, (g) => g.ownership);
-  }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    activeTab,
-  ]);
+  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
 
   const formatCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -774,17 +777,7 @@ export default function HomePage() {
       exclude: "format",
     });
     return countByKey(base, (g) => g.format);
-  }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    activeTab,
-  ]);
+  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
 
   const yearsPlayedCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -800,17 +793,7 @@ export default function HomePage() {
       exclude: "yearsPlayed",
     });
     return countByTagList(base, (g) => g.yearPlayed);
-  }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    activeTab,
-  ]);
+  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
 
   const genreCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -826,17 +809,7 @@ export default function HomePage() {
       exclude: "genres",
     });
     return countByTagList(base, (g) => g.genres);
-  }, [
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    activeTab,
-  ]);
+  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
 
   function toggleGenre(genre: string) {
     setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
@@ -859,13 +832,13 @@ export default function HomePage() {
   const headerAvatarUrl =
     "https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no";
 
+  const year = new Date().getFullYear();
+
   const gamesTotal = games.length;
   const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
   const queuedTotal = games.filter((g) => norm(g.status) === "Queued").length;
   const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length;
   const completedTotal = games.filter((g) => toBool(g.completed)).length;
-
-  const year = new Date().getFullYear();
   const playedThisYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
 
   const sidebarStyle: React.CSSProperties = {
@@ -913,19 +886,12 @@ export default function HomePage() {
             padding: 12px 18px;
             background: ${COLORS.bg};
             border-bottom: 1px solid ${COLORS.border};
-            margin: -18px -18px 10px -18px;
+            margin: -18px -18px 14px -18px;
           }
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
-
-          /* Make top tabs fit better on mobile */
-          .topTabs {
-            gap: 10px !important;
-          }
-          .topTabs button {
-            font-size: 13px !important;
-            padding: 6px 4px !important;
-          }
+          .topTabsWrap { gap: 10px !important; }
+          .topTabsWrap button { font-size: 13px !important; padding: 6px 4px !important; }
         }
         .mobileOnly { display: none; }
       `}</style>
@@ -1012,23 +978,31 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* STATS (new layout like screenshot) */}
+          {/* ✅ STATS (aligned labels, one-line) */}
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 6 }}>STATS</div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 8 }}>STATS</div>
+
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
                 columnGap: 14,
-                rowGap: 8,
+                rowGap: 10,
               }}
             >
-              <StatRow value={gamesTotal} label="Games" />
-              <StatRow value={nowPlayingTotal} label="Now Playing" />
-              <StatRow value={queuedTotal} label="Queued" />
-              <StatRow value={wishlistTotal} label="Wishlist" />
-              <StatRow value={completedTotal} label="Completed" />
-              <StatRow value={playedThisYear} label={`Played in ${year}`} />
+              {/* left column */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+                <StatRow value={gamesTotal} label="Games" numberWidth={46} />
+                <StatRow value={queuedTotal} label="Queued" numberWidth={46} />
+                <StatRow value={completedTotal} label="Completed" numberWidth={46} />
+              </div>
+
+              {/* right column */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+                <StatRow value={nowPlayingTotal} label="Now Playing" numberWidth={46} />
+                <StatRow value={wishlistTotal} label="Wishlist" numberWidth={46} />
+                <StatRow value={playedThisYear} label={`Played in ${year}`} numberWidth={46} />
+              </div>
             </div>
           </div>
 
@@ -1055,7 +1029,12 @@ export default function HomePage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
+          <FacetRowsSingle
+            options={ownerships}
+            counts={ownershipCounts}
+            selected={selectedOwnership}
+            onSelect={setSelectedOwnership}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
@@ -1063,7 +1042,12 @@ export default function HomePage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
+          <FacetRowsMulti
+            options={allYearsPlayed}
+            counts={yearsPlayedCounts}
+            selected={selectedYearsPlayed}
+            onToggle={toggleYearPlayed}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
@@ -1115,15 +1099,24 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Top nav (tabs only; stats moved to sidebar) */}
-        <div style={{ marginBottom: 14 }}>
-          <div className="topTabs" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "nowrap", overflowX: "auto" }}>
-            <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-            <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
-            <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
-          </div>
+        {/* Top nav */}
+        <div
+          className="topTabsWrap"
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            gap: 14,
+            marginBottom: 14,
+            flexWrap: "nowrap",
+            overflowX: "auto",
+            scrollbarWidth: "none",
+          }}
+        >
+          <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+          <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+          <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+          <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+          <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
         </div>
 
         {loading ? (
