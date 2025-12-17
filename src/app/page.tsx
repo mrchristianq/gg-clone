@@ -715,7 +715,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    setTileSize(isMobile ? 100 : 130);
+    setTileSize(isMobile ? 100 : 120);
   }, [isMobile]);
 
   useEffect(() => {
