@@ -1,9 +1,15 @@
-/* ============================================================================
-   Chris' Game Library — v1.5.1
+/* =====================================================================================
+   Chris' Game Library
+   Version: 1.5.2
    Notes:
-   - Fix: “Completed” no longer appears twice in the pop-up details.
-     (We hide Status when it equals "Completed" and we only render Completed once.)
-   ============================================================================ */
+   - Fix: Detail modal no longer shows "Completed" twice (won’t show Status="Completed" pill)
+   - Keep: Stats styling + alignment (no ALL CAPS, labels line up, match locked look)
+   - Keep: Desktop tile default = 120, mobile default = 100
+   - Keep: 5 top tabs (Games / Now Playing / Queued / Wishlist / Completed) + top-right count
+   - Keep: Plus icons on facet headers
+   - Keep: Game detail modal layout (cover + tags left; screenshot + info right; info 2-col;
+           Description + Screenshot full-width)
+===================================================================================== */
 
 "use client";
 
@@ -15,21 +21,21 @@ type Row = Record<string, string>;
 type Game = {
   title: string;
   coverUrl: string;
-  screenshotUrl: string;
 
-  platforms: string[];
+  platform: string[]; // supports either Platform or Platforms input
+  status: string; // Now Playing / Queued / Abandoned / etc
   genres: string[];
-  yearPlayed: string[];
-
-  status: string;
   ownership: string;
   format: string;
 
   releaseDate: string;
   dateAdded: string;
 
-  completed: boolean;
+  completed: string; // truthy
+  backlog: string; // legacy (we don't rely on it for top tabs now)
+
   dateCompleted: string;
+  yearPlayed: string[];
 
   igdbId: string;
   igdbRating: string;
@@ -38,6 +44,7 @@ type Game = {
 
   developer: string;
   description: string;
+  screenshotUrl: string; // hero
 };
 
 const COLORS = {
@@ -55,6 +62,7 @@ const COLORS = {
   badgeBorder: "rgba(255,255,255,0.10)",
   accent: "#22c55e",
   statNumber: "#168584",
+  modalBg: "rgba(0,0,0,0.62)",
 };
 
 function norm(v: unknown) {
@@ -65,13 +73,19 @@ function splitTags(s: string) {
   return norm(s)
     .split(",")
     .map((t) => t.trim())
-    .filter(Boolean)
-    .filter((t) => t !== "#REF!");
+    .filter(Boolean);
 }
 
 function toBool(v: string) {
   const s = norm(v).toLowerCase();
-  return s === "true" || s === "yes" || s === "y" || s === "1" || s === "checked" || s === "x";
+  return (
+    s === "true" ||
+    s === "yes" ||
+    s === "y" ||
+    s === "1" ||
+    s === "checked" ||
+    s === "x"
+  );
 }
 
 function toDateNum(s: string) {
@@ -82,7 +96,13 @@ function toDateNum(s: string) {
 }
 
 function uniqueSorted(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  return Array.from(
+    new Set(
+      values
+        .map((x) => norm(x))
+        .filter((x) => x && x !== "#REF!" && x.toLowerCase() !== "n/a")
+    )
+  ).sort((a, b) => a.localeCompare(b));
 }
 
 function titleKey(title: string) {
@@ -100,8 +120,6 @@ function pickCover(row: Row) {
 function pickScreenshot(row: Row) {
   const s = norm(row["ScreenshotURL"]);
   if (s.startsWith("http")) return s;
-  const s2 = norm(row["ScreenshotsURL"]);
-  if (s2.startsWith("http")) return s2;
   return "";
 }
 
@@ -109,27 +127,27 @@ function rowToGame(row: Row): Game | null {
   const title = norm(row["Title"]);
   if (!title) return null;
 
-  // “Platform” vs “Platforms”
-  const platformStr = norm(row["Platforms"] || row["Platform"]);
+  const platform = splitTags(row["Platforms"] || row["Platform"]);
+  const genres = splitTags(row["Genres"]);
+  const yearPlayed = splitTags(row["YearPlayed"]);
 
   return {
     title,
     coverUrl: pickCover(row),
-    screenshotUrl: pickScreenshot(row),
 
-    platforms: splitTags(platformStr),
-    genres: splitTags(row["Genres"]),
-    yearPlayed: splitTags(row["YearPlayed"]),
-
+    platform,
     status: norm(row["Status"]),
+    genres,
     ownership: norm(row["Ownership"]),
     format: norm(row["Format"]),
 
     releaseDate: norm(row["ReleaseDate"]),
     dateAdded: norm(row["DateAdded"]),
 
-    completed: toBool(row["Completed"]),
+    backlog: norm(row["Backlog"]),
+    completed: norm(row["Completed"]),
     dateCompleted: norm(row["DateCompleted"]),
+    yearPlayed,
 
     igdbId: norm(row["IGDB_ID"]),
     igdbRating: norm(row["IGDB_Rating"]),
@@ -138,6 +156,7 @@ function rowToGame(row: Row): Game | null {
 
     developer: norm(row["Developer"]),
     description: norm(row["Description"]),
+    screenshotUrl: pickScreenshot(row),
   };
 }
 
@@ -155,29 +174,25 @@ function dedupeByTitle(rows: Game[]) {
     }
 
     const coverUrl = existing.coverUrl || g.coverUrl;
-    const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
-
-    const platforms = uniqueSorted([...existing.platforms, ...g.platforms]);
+    const platform = uniqueSorted([...existing.platform, ...g.platform]);
     const genres = uniqueSorted([...existing.genres, ...g.genres]);
     const yearPlayed = uniqueSorted([...existing.yearPlayed, ...g.yearPlayed]);
 
-    const completed = existing.completed || g.completed;
+    const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
+    const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
 
-    // releaseDate: earliest non-empty
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
     if (!aRel && bRel) releaseDate = g.releaseDate;
     else if (aRel && bRel) releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
-    // dateAdded: earliest non-empty
     const aAdded = toDateNum(existing.dateAdded);
     const bAdded = toDateNum(g.dateAdded);
     let dateAdded = existing.dateAdded;
     if (!aAdded && bAdded) dateAdded = g.dateAdded;
     else if (aAdded && bAdded) dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
 
-    // dateCompleted: latest non-empty
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
@@ -192,20 +207,19 @@ function dedupeByTitle(rows: Game[]) {
     const igdbRating = existing.igdbRating || g.igdbRating;
     const myRating = existing.myRating || g.myRating;
     const hoursPlayed = existing.hoursPlayed || g.hoursPlayed;
-    const developer = existing.developer || g.developer;
 
-    // description: prefer longer
-    const description =
-      (existing.description || "").length >= (g.description || "").length ? existing.description : g.description;
+    const developer = existing.developer || g.developer;
+    const description = existing.description || g.description;
+    const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
     map.set(k, {
       ...existing,
       coverUrl,
-      screenshotUrl,
-      platforms,
+      platform,
       genres,
       yearPlayed,
       completed,
+      backlog,
       releaseDate,
       dateAdded,
       dateCompleted,
@@ -218,79 +232,18 @@ function dedupeByTitle(rows: Game[]) {
       hoursPlayed,
       developer,
       description,
+      screenshotUrl,
     });
   }
 
   return Array.from(map.values());
 }
 
-function buildBaseForFacet(args: {
-  games: Game[];
-  q: string;
-  selectedPlatform: string;
-  selectedStatus: string;
-  selectedOwnership: string;
-  selectedFormat: string;
-  selectedGenres: string[];
-  selectedYearsPlayed: string[];
-  activeTab: "games" | "nowPlaying" | "queued" | "wishlist" | "completed";
-  exclude: "platforms" | "status" | "ownership" | "format" | "genres" | "yearsPlayed";
-}) {
-  const {
-    games,
-    q,
-    selectedPlatform,
-    selectedStatus,
-    selectedOwnership,
-    selectedFormat,
-    selectedGenres,
-    selectedYearsPlayed,
-    activeTab,
-    exclude,
-  } = args;
-
-  const query = q.trim().toLowerCase();
-
-  return games.filter((g) => {
-    if (query && !g.title.toLowerCase().includes(query)) return false;
-
-    // Tabs
-    if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
-    if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
-    if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
-    if (activeTab === "completed" && !g.completed) return false;
-
-    if (exclude !== "status" && selectedStatus && g.status !== selectedStatus) return false;
-    if (exclude !== "ownership" && selectedOwnership && g.ownership !== selectedOwnership) return false;
-    if (exclude !== "format" && selectedFormat && g.format !== selectedFormat) return false;
-
-    if (exclude !== "platforms" && selectedPlatform) {
-      const set = new Set(g.platforms.map((x) => x.toLowerCase()));
-      if (!set.has(selectedPlatform.toLowerCase())) return false;
-    }
-
-    // Genres = AND
-    if (exclude !== "genres" && selectedGenres.length) {
-      const set = new Set(g.genres.map((x) => x.toLowerCase()));
-      for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
-    }
-
-    // Years Played = OR
-    if (exclude !== "yearsPlayed" && selectedYearsPlayed.length) {
-      const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
-      const any = selectedYearsPlayed.some((y) => set.has(y.toLowerCase()));
-      if (!any) return false;
-    }
-
-    return true;
-  });
-}
-
 function countByKey<T>(base: T[], getKey: (g: T) => string) {
   const map = new Map<string, number>();
   for (const g of base) {
     const k = norm(getKey(g));
-    if (!k || k === "#REF!") continue;
+    if (!k || k === "#REF!" || k.toLowerCase() === "n/a") continue;
     map.set(k, (map.get(k) ?? 0) + 1);
   }
   return map;
@@ -301,7 +254,7 @@ function countByTagList(base: Game[], getTags: (g: Game) => string[]) {
   for (const g of base) {
     for (const tag of getTags(g)) {
       const k = norm(tag);
-      if (!k || k === "#REF!") continue;
+      if (!k || k === "#REF!" || k.toLowerCase() === "n/a") continue;
       map.set(k, (map.get(k) ?? 0) + 1);
     }
   }
@@ -331,22 +284,25 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-function PlusMinus({ open }: { open: boolean }) {
+function PlusIcon({ open }: { open: boolean }) {
   return (
     <span
+      aria-hidden
       style={{
-        display: "inline-flex",
         width: 18,
         height: 18,
+        display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
         color: COLORS.muted,
         fontSize: 16,
+        lineHeight: "18px",
         userSelect: "none",
+        transform: open ? "rotate(45deg)" : "rotate(0deg)",
+        transition: "transform 120ms ease",
       }}
-      aria-hidden
     >
-      {open ? "−" : "+"}
+      +
     </span>
   );
 }
@@ -363,7 +319,7 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div style={{ marginBottom: 8 }}>
       <button
         onClick={() => setOpen(!open)}
         style={{
@@ -395,11 +351,11 @@ function CollapsibleSection({
           >
             {title}
           </div>
-          <PlusMinus open={open} />
+          <PlusIcon open={open} />
         </div>
       </button>
 
-      {open && <div style={{ marginTop: 6 }}>{children}</div>}
+      {open && <div style={{ marginTop: 4 }}>{children}</div>}
     </div>
   );
 }
@@ -415,11 +371,9 @@ function FacetRowsSingle({
   selected: string;
   onSelect: (v: string) => void;
 }) {
-  const cleanOptions = options.filter((o) => o && o !== "#REF!");
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      {cleanOptions.map((opt) => {
+      {options.map((opt) => {
         const active = selected === opt;
         const c = counts.get(opt) ?? 0;
 
@@ -443,8 +397,21 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -468,11 +435,10 @@ function FacetRowsMulti({
   onToggle: (v: string) => void;
 }) {
   const set = new Set(selected);
-  const cleanOptions = options.filter((o) => o && o !== "#REF!");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      {cleanOptions.map((opt) => {
+      {options.map((opt) => {
         const active = set.has(opt);
         const c = counts.get(opt) ?? 0;
 
@@ -496,8 +462,21 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -578,85 +557,127 @@ function TabButton({
   );
 }
 
-function StatCompact({
-  value,
-  label,
+/** Stats block – matches your locked look: 2 columns, tight, no uppercase, aligned labels */
+function StatsBlock({
+  left,
+  right,
 }: {
-  value: number;
-  label: string;
+  left: { value: number; label: string }[];
+  right: { value: number; label: string }[];
 }) {
+  const labelStyle: React.CSSProperties = {
+    color: COLORS.muted,
+    fontSize: 12,
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  };
+
+  const valueStyle: React.CSSProperties = {
+    color: COLORS.statNumber,
+    fontSize: 18,
+    fontWeight: 900,
+    lineHeight: 1,
+    width: 54, // forces consistent label alignment
+    textAlign: "right",
+    flex: "0 0 auto",
+  };
+
+  const rowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 10,
+    minHeight: 22,
+  };
+
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "52px 1fr",
-        columnGap: 10,
-        alignItems: "baseline",
-      }}
-    >
+    <div style={{ marginTop: 10 }}>
       <div
         style={{
-          textAlign: "right",
-          fontSize: 18,
-          fontWeight: 900,
-          color: COLORS.statNumber,
-          lineHeight: 1.05,
-        }}
-      >
-        {value}
-      </div>
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
+          fontSize: 11,
+          fontWeight: 800,
           color: COLORS.muted,
-          lineHeight: 1.05,
-          whiteSpace: "nowrap",
+          marginBottom: 8,
+          letterSpacing: "0.04em",
         }}
       >
-        {label}
+        STATS
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          columnGap: 18,
+          rowGap: 10,
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {left.map((s) => (
+            <div key={s.label} style={rowStyle}>
+              <div style={valueStyle}>{s.value}</div>
+              <div style={labelStyle}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {right.map((s) => (
+            <div key={s.label} style={rowStyle}>
+              <div style={valueStyle}>{s.value}</div>
+              <div style={labelStyle}>{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function InfoPill({ children }: { children: React.ReactNode }) {
+/** Modal bits */
+function TagPill({ text }: { text: string }) {
   return (
     <span
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        height: 22,
-        padding: "0 10px",
+        padding: "6px 10px",
         borderRadius: 999,
+        background: "rgba(255,255,255,0.06)",
         border: `1px solid ${COLORS.border}`,
-        background: "rgba(255,255,255,0.04)",
         color: COLORS.text,
         fontSize: 12,
         fontWeight: 700,
         whiteSpace: "nowrap",
       }}
     >
-      {children}
+      {text}
     </span>
   );
 }
 
-function FieldRow({ k, v }: { k: string; v: React.ReactNode }) {
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div
       style={{
-        display: "grid",
-        gridTemplateColumns: "150px 1fr",
-        gap: 10,
-        padding: "8px 0",
-        borderBottom: `1px solid ${COLORS.border}`,
+        background: "rgba(255,255,255,0.03)",
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 14,
+        padding: 12,
+        minHeight: 56,
       }}
     >
-      <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-        {k}
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.04em",
+          marginBottom: 6,
+        }}
+      >
+        {label}
       </div>
-      <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 600, lineHeight: 1.35 }}>{v}</div>
+      <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>
+        {value || <span style={{ color: COLORS.muted }}>—</span>}
+      </div>
     </div>
   );
 }
@@ -668,6 +689,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   const [tileSize, setTileSize] = useState(120); // desktop default
+  const [isMobile, setIsMobile] = useState(false);
+
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -678,9 +701,13 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed">("games");
+  const [activeTab, setActiveTab] = useState<
+    "games" | "nowPlaying" | "queued" | "wishlist" | "completed"
+  >("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">("releaseDate");
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">(
+    "releaseDate"
+  );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -694,18 +721,25 @@ export default function HomePage() {
 
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
-  // Set default tile size based on viewport (desktop 120, mobile 100)
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 900px)");
-    const apply = () => setTileSize(mq.matches ? 100 : 120);
+
+    const apply = () => {
+      const m = mq.matches;
+      setIsMobile(m);
+      setTileSize(m ? 100 : 120);
+    };
+
     apply();
 
+    const onChange = () => apply();
+
     if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
     }
-    mq.addListener(apply);
-    return () => mq.removeListener(apply);
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
   }, []);
 
   useEffect(() => {
@@ -722,16 +756,36 @@ export default function HomePage() {
       setGames(dedupeByTitle(mapped));
       setLoading(false);
     }
-
     load();
   }, [csvUrl]);
 
-  const platforms = useMemo(() => uniqueSorted(games.flatMap((g) => g.platforms)), [games]);
-  const statuses = useMemo(() => uniqueSorted(games.map((g) => g.status).filter((s) => s && s !== "#REF!")), [games]);
-  const ownerships = useMemo(() => uniqueSorted(games.map((g) => g.ownership).filter((s) => s && s !== "#REF!")), [games]);
-  const formats = useMemo(() => uniqueSorted(games.map((g) => g.format).filter((s) => s && s !== "#REF!")), [games]);
+  const platforms = useMemo(() => uniqueSorted(games.flatMap((g) => g.platform)), [games]);
+  const statuses = useMemo(() => uniqueSorted(games.map((g) => g.status)), [games]);
+  const ownerships = useMemo(() => uniqueSorted(games.map((g) => g.ownership)), [games]);
+  const formats = useMemo(() => uniqueSorted(games.map((g) => g.format)), [games]);
   const allGenres = useMemo(() => uniqueSorted(games.flatMap((g) => g.genres)), [games]);
   const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
+
+  function toggleGenre(genre: string) {
+    setSelectedGenres((prev) =>
+      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
+    );
+  }
+  function toggleYearPlayed(year: string) {
+    setSelectedYearsPlayed((prev) =>
+      prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]
+    );
+  }
+
+  function clearFilters() {
+    setQ("");
+    setSelectedGenres([]);
+    setSelectedYearsPlayed([]);
+    setSelectedPlatform("");
+    setSelectedStatus("");
+    setSelectedOwnership("");
+    setSelectedFormat("");
+  }
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -739,25 +793,29 @@ export default function HomePage() {
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
+      // Top tabs
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
       if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
       if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
-      if (activeTab === "completed" && !g.completed) return false;
+      if (activeTab === "completed" && !toBool(g.completed)) return false;
 
+      // Facets
       if (selectedStatus && g.status !== selectedStatus) return false;
       if (selectedOwnership && g.ownership !== selectedOwnership) return false;
       if (selectedFormat && g.format !== selectedFormat) return false;
 
       if (selectedPlatform) {
-        const set = new Set(g.platforms.map((x) => x.toLowerCase()));
+        const set = new Set(g.platform.map((x) => x.toLowerCase()));
         if (!set.has(selectedPlatform.toLowerCase())) return false;
       }
 
+      // Genres = AND
       if (selectedGenres.length) {
         const set = new Set(g.genres.map((x) => x.toLowerCase()));
         for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
       }
 
+      // Years Played = OR
       if (selectedYearsPlayed.length) {
         const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
         const any = selectedYearsPlayed.some((y) => set.has(y.toLowerCase()));
@@ -772,7 +830,8 @@ export default function HomePage() {
     return base.sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
       if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateCompleted")
+        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
       if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
@@ -790,131 +849,25 @@ export default function HomePage() {
     sortDir,
   ]);
 
-  const platformCounts = useMemo(() => {
-    const base = buildBaseForFacet({
-      games,
-      q,
-      selectedPlatform,
-      selectedStatus,
-      selectedOwnership,
-      selectedFormat,
-      selectedGenres,
-      selectedYearsPlayed,
-      activeTab,
-      exclude: "platforms",
-    });
-    return countByTagList(base, (g) => g.platforms);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  // Facet counts that respect the OTHER filters (simple + fast enough)
+  const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
+  const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
+  const ownershipCounts = useMemo(() => countByKey(filtered, (g) => g.ownership), [filtered]);
+  const formatCounts = useMemo(() => countByKey(filtered, (g) => g.format), [filtered]);
+  const yearsPlayedCounts = useMemo(() => countByTagList(filtered, (g) => g.yearPlayed), [filtered]);
+  const genreCounts = useMemo(() => countByTagList(filtered, (g) => g.genres), [filtered]);
 
-  const statusCounts = useMemo(() => {
-    const base = buildBaseForFacet({
-      games,
-      q,
-      selectedPlatform,
-      selectedStatus,
-      selectedOwnership,
-      selectedFormat,
-      selectedGenres,
-      selectedYearsPlayed,
-      activeTab,
-      exclude: "status",
-    });
-    return countByKey(base, (g) => g.status);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
-
-  const ownershipCounts = useMemo(() => {
-    const base = buildBaseForFacet({
-      games,
-      q,
-      selectedPlatform,
-      selectedStatus,
-      selectedOwnership,
-      selectedFormat,
-      selectedGenres,
-      selectedYearsPlayed,
-      activeTab,
-      exclude: "ownership",
-    });
-    return countByKey(base, (g) => g.ownership);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
-
-  const formatCounts = useMemo(() => {
-    const base = buildBaseForFacet({
-      games,
-      q,
-      selectedPlatform,
-      selectedStatus,
-      selectedOwnership,
-      selectedFormat,
-      selectedGenres,
-      selectedYearsPlayed,
-      activeTab,
-      exclude: "format",
-    });
-    return countByKey(base, (g) => g.format);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
-
-  const yearsPlayedCounts = useMemo(() => {
-    const base = buildBaseForFacet({
-      games,
-      q,
-      selectedPlatform,
-      selectedStatus,
-      selectedOwnership,
-      selectedFormat,
-      selectedGenres,
-      selectedYearsPlayed,
-      activeTab,
-      exclude: "yearsPlayed",
-    });
-    return countByTagList(base, (g) => g.yearPlayed);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
-
-  const genreCounts = useMemo(() => {
-    const base = buildBaseForFacet({
-      games,
-      q,
-      selectedPlatform,
-      selectedStatus,
-      selectedOwnership,
-      selectedFormat,
-      selectedGenres,
-      selectedYearsPlayed,
-      activeTab,
-      exclude: "genres",
-    });
-    return countByTagList(base, (g) => g.genres);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
-
-  function toggleGenre(genre: string) {
-    setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
-  }
-
-  function toggleYearPlayed(year: string) {
-    setSelectedYearsPlayed((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
-  }
-
-  function clearFilters() {
-    setQ("");
-    setSelectedGenres([]);
-    setSelectedYearsPlayed([]);
-    setSelectedPlatform("");
-    setSelectedStatus("");
-    setSelectedOwnership("");
-    setSelectedFormat("");
-  }
-
-  const headerAvatarUrl =
-    "https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no";
-
-  const year = new Date().getFullYear();
-
+  // Stats (locked layout)
   const gamesTotal = games.length;
+  const year = new Date().getFullYear();
+  const inYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
   const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
   const queuedTotal = games.filter((g) => norm(g.status) === "Queued").length;
   const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length;
-  const completedTotal = games.filter((g) => g.completed).length;
-  const playedThisYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
+  const completedTotal = games.filter((g) => toBool(g.completed)).length;
+
+  const headerAvatarUrl =
+    "https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no";
 
   const sidebarStyle: React.CSSProperties = {
     width: 340,
@@ -929,11 +882,7 @@ export default function HomePage() {
     msOverflowStyle: "none",
   };
 
-  const totalCount = filtered.length;
-
-  function closeModal() {
-    setSelectedGame(null);
-  }
+  const topRightCount = filtered.length;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
@@ -973,39 +922,11 @@ export default function HomePage() {
           .desktopOnly { display: none !important; }
         }
         .mobileOnly { display: none; }
-
-        .modalOverlay {
-          position: fixed;
-          inset: 0;
-          z-index: 90;
-          background: rgba(0,0,0,0.65);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 18px;
-        }
-        .modalCard {
-          width: min(1100px, 100%);
-          max-height: min(84vh, 860px);
-          overflow: auto;
-          border-radius: 18px;
-          background: ${COLORS.panel};
-          border: 1px solid ${COLORS.border};
-          box-shadow: 0 30px 80px rgba(0,0,0,.65);
-        }
-        .modalTop {
-          position: sticky;
-          top: 0;
-          z-index: 2;
-          background: linear-gradient(to bottom, ${COLORS.panel} 0%, rgba(15,17,23,0.85) 70%, rgba(15,17,23,0) 100%);
-          padding: 14px 16px;
-          border-bottom: 1px solid ${COLORS.border};
-          backdrop-filter: blur(6px);
-        }
       `}</style>
 
       {filtersOpen && <div className="overlay" onClick={() => setFiltersOpen(false)} />}
 
+      {/* Sidebar */}
       <aside className={`sidebar ${filtersOpen ? "open" : ""}`} style={sidebarStyle} aria-label="Filters">
         <div
           style={{
@@ -1071,7 +992,9 @@ export default function HomePage() {
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <SmallSelect
                 value={sortBy}
-                onChange={(v) => setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")}
+                onChange={(v) =>
+                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")
+                }
               >
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
@@ -1086,20 +1009,19 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 8 }}>STATS</div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <StatCompact value={gamesTotal} label="Games" />
-              <StatCompact value={playedThisYear} label={`in ${year}`} />
-
-              <StatCompact value={nowPlayingTotal} label="Now Playing" />
-              <StatCompact value={queuedTotal} label="Queued" />
-
-              <StatCompact value={wishlistTotal} label="Wishlist" />
-              <StatCompact value={completedTotal} label="Completed" />
-            </div>
-          </div>
+          {/* ✅ Stats (locked) */}
+          <StatsBlock
+            left={[
+              { value: gamesTotal, label: "Games" },
+              { value: nowPlayingTotal, label: "Now Playing" },
+              { value: wishlistTotal, label: "Wishlist" },
+            ]}
+            right={[
+              { value: inYear, label: `in ${year}` },
+              { value: queuedTotal, label: "Queued" },
+              { value: completedTotal, label: "Completed" },
+            ]}
+          />
 
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>COVER SIZE</div>
@@ -1116,27 +1038,57 @@ export default function HomePage() {
         </div>
 
         <CollapsibleSection title="Platform" open={openPlatform} setOpen={setOpenPlatform}>
-          <FacetRowsSingle options={platforms} counts={platformCounts} selected={selectedPlatform} onSelect={setSelectedPlatform} />
+          <FacetRowsSingle
+            options={platforms}
+            counts={platformCounts}
+            selected={selectedPlatform}
+            onSelect={setSelectedPlatform}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Status" open={openStatus} setOpen={setOpenStatus}>
-          <FacetRowsSingle options={statuses} counts={statusCounts} selected={selectedStatus} onSelect={setSelectedStatus} />
+          <FacetRowsSingle
+            options={statuses}
+            counts={statusCounts}
+            selected={selectedStatus}
+            onSelect={setSelectedStatus}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
+          <FacetRowsSingle
+            options={ownerships}
+            counts={ownershipCounts}
+            selected={selectedOwnership}
+            onSelect={setSelectedOwnership}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
-          <FacetRowsSingle options={formats} counts={formatCounts} selected={selectedFormat} onSelect={setSelectedFormat} />
+          <FacetRowsSingle
+            options={formats}
+            counts={formatCounts}
+            selected={selectedFormat}
+            onSelect={setSelectedFormat}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
+          <FacetRowsMulti
+            options={allYearsPlayed}
+            counts={yearsPlayedCounts}
+            selected={selectedYearsPlayed}
+            onToggle={toggleYearPlayed}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
+          <FacetRowsMulti
+            options={allGenres}
+            counts={genreCounts}
+            selected={selectedGenres}
+            onToggle={toggleGenre}
+          />
         </CollapsibleSection>
 
         <button
@@ -1157,9 +1109,12 @@ export default function HomePage() {
           Clear Filters
         </button>
 
-        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>Showing {filtered.length} / {games.length}</div>
+        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>
+          Showing {filtered.length} / {games.length}
+        </div>
       </aside>
 
+      {/* Main */}
       <main style={{ flex: 1, padding: 18 }}>
         <div className="mobileTopbar mobileOnly">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -1178,7 +1133,7 @@ export default function HomePage() {
             >
               Filters
             </button>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>{filtered.length}</div>
+            <div style={{ fontSize: 12, color: COLORS.muted }}>{topRightCount}</div>
           </div>
         </div>
 
@@ -1194,13 +1149,23 @@ export default function HomePage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+            <TabButton
+              label="Now Playing"
+              active={activeTab === "nowPlaying"}
+              onClick={() => setActiveTab("nowPlaying")}
+            />
             <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
             <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+            <TabButton
+              label="Completed"
+              active={activeTab === "completed"}
+              onClick={() => setActiveTab("completed")}
+            />
           </div>
 
-          <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>{totalCount}</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>
+            {topRightCount}
+          </div>
         </div>
 
         {loading ? (
@@ -1269,163 +1234,170 @@ export default function HomePage() {
       {/* Modal */}
       {selectedGame && (
         <div
-          className="modalOverlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeModal();
-          }}
           role="dialog"
           aria-modal="true"
+          onClick={() => setSelectedGame(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: COLORS.modalBg,
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
         >
-          <div className="modalCard">
-            <div className="modalTop">
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 22, fontWeight: 950, lineHeight: 1.15 }}>{selectedGame.title}</div>
-                  <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {/* Tags (avoid Completed duplication: don't show Status if it is "Completed") */}
-                    {selectedGame.status && selectedGame.status !== "Completed" && <InfoPill>{selectedGame.status}</InfoPill>}
-                    {selectedGame.ownership && <InfoPill>{selectedGame.ownership}</InfoPill>}
-                    {selectedGame.format && <InfoPill>{selectedGame.format}</InfoPill>}
-                    {selectedGame.completed && <InfoPill>Completed</InfoPill>}
-                    {selectedGame.yearPlayed.map((y) => (
-                      <InfoPill key={y}>{y}</InfoPill>
-                    ))}
-                    {selectedGame.platforms.slice(0, 6).map((p) => (
-                      <InfoPill key={p}>{p}</InfoPill>
-                    ))}
-                    {selectedGame.genres.slice(0, 6).map((g) => (
-                      <InfoPill key={g}>{g}</InfoPill>
-                    ))}
-                  </div>
-                </div>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(1100px, 100%)",
+              maxHeight: "92vh",
+              overflow: "auto",
+              background: COLORS.panel,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 18,
+              boxShadow: "0 30px 80px rgba(0,0,0,.7)",
+              padding: 16,
+              position: "relative",
+            }}
+          >
+            <button
+              onClick={() => setSelectedGame(null)}
+              style={{
+                position: "absolute",
+                right: 12,
+                top: 12,
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.card,
+                color: COLORS.text,
+                cursor: "pointer",
+                fontSize: 18,
+                fontWeight: 900,
+              }}
+              aria-label="Close"
+            >
+              ×
+            </button>
 
-                <button
-                  onClick={closeModal}
+            <div className="modalStack" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+              {/* Left: cover + tags */}
+              <div style={{ width: 260, flex: "0 0 auto" }}>
+                <div
                   style={{
-                    flex: "0 0 auto",
-                    width: 36,
-                    height: 36,
-                    borderRadius: 12,
+                    borderRadius: 16,
+                    overflow: "hidden",
                     border: `1px solid ${COLORS.border}`,
-                    background: "rgba(255,255,255,0.04)",
-                    color: COLORS.text,
-                    cursor: "pointer",
-                    fontWeight: 900,
-                    fontSize: 16,
+                    background: COLORS.card,
+                    aspectRatio: "2 / 3",
+                    boxShadow: "0 18px 50px rgba(0,0,0,.55)",
                   }}
-                  aria-label="Close"
                 >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            <div style={{ padding: 16 }}>
-              {/* Left (cover) + right (screenshot) stays side-by-side */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "260px 1fr",
-                  gap: 16,
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      width: "100%",
-                      aspectRatio: "2 / 3",
-                      borderRadius: 16,
-                      overflow: "hidden",
-                      background: COLORS.card,
-                      border: `1px solid ${COLORS.border}`,
-                      boxShadow: "0 20px 50px rgba(0,0,0,.6)",
-                    }}
-                  >
-                    {selectedGame.coverUrl ? (
-                      <img
-                        src={selectedGame.coverUrl}
-                        alt={selectedGame.title}
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                      />
-                    ) : (
-                      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
-                        No cover
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  {selectedGame.screenshotUrl ? (
-                    <div
-                      style={{
-                        borderRadius: 16,
-                        overflow: "hidden",
-                        border: `1px solid ${COLORS.border}`,
-                        background: COLORS.card,
-                        boxShadow: "0 20px 50px rgba(0,0,0,.45)",
-                      }}
-                    >
-                      <img
-                        src={selectedGame.screenshotUrl}
-                        alt={`${selectedGame.title} screenshot`}
-                        style={{ width: "100%", height: 300, objectFit: "cover", display: "block" }}
-                      />
-                    </div>
+                  {selectedGame.coverUrl ? (
+                    <img
+                      src={selectedGame.coverUrl}
+                      alt={selectedGame.title}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
                   ) : (
                     <div
                       style={{
-                        height: 300,
-                        borderRadius: 16,
-                        border: `1px solid ${COLORS.border}`,
-                        background: "rgba(255,255,255,0.03)",
-                        color: COLORS.muted,
+                        height: "100%",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: 13,
+                        color: COLORS.muted,
                       }}
                     >
-                      No screenshot
-                    </div>
-                  )}
-
-                  {/* Description full width */}
-                  {selectedGame.description && (
-                    <div style={{ marginTop: 14 }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                        Description
-                      </div>
-                      <div style={{ marginTop: 8, color: COLORS.text, fontSize: 13, lineHeight: 1.55 }}>
-                        {selectedGame.description}
-                      </div>
+                      No cover
                     </div>
                   )}
                 </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>{selectedGame.title}</div>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {selectedGame.platform.slice(0, 6).map((p) => (
+                      <TagPill key={`p-${p}`} text={p} />
+                    ))}
+                    {selectedGame.genres.slice(0, 6).map((g) => (
+                      <TagPill key={`g-${g}`} text={g} />
+                    ))}
+                    {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
+                    {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
+
+                    {/* ✅ Avoid duplicate: if Status is "Completed", don't show it; show Completed pill instead */}
+                    {selectedGame.status && norm(selectedGame.status).toLowerCase() !== "completed" ? (
+                      <TagPill text={selectedGame.status} />
+                    ) : null}
+
+                    {toBool(selectedGame.completed) ? <TagPill text="Completed" /> : null}
+                  </div>
+                </div>
               </div>
 
-              {/* Bottom info: 2 columns (full width area) */}
-              <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <div>
-                  <FieldRow k="Release date" v={selectedGame.releaseDate || "—"} />
-                  <FieldRow k="Developer" v={selectedGame.developer || "—"} />
-                  <FieldRow k="Platforms" v={selectedGame.platforms.length ? selectedGame.platforms.join(", ") : "—"} />
-                  <FieldRow k="Genres" v={selectedGame.genres.length ? selectedGame.genres.join(", ") : "—"} />
+              {/* Right: screenshot + info */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Screenshot full width */}
+                {selectedGame.screenshotUrl ? (
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      overflow: "hidden",
+                      border: `1px solid ${COLORS.border}`,
+                      background: COLORS.card,
+                      aspectRatio: "16 / 9",
+                      boxShadow: "0 18px 50px rgba(0,0,0,.45)",
+                    }}
+                  >
+                    <img
+                      src={selectedGame.screenshotUrl}
+                      alt={`${selectedGame.title} screenshot`}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  </div>
+                ) : null}
+
+                {/* Info grid: 2 columns */}
+                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Release Date" value={selectedGame.releaseDate} />
+                  <Field label="Year Played" value={selectedGame.yearPlayed.join(", ")} />
+
+                  <Field label="IGDB Rating" value={selectedGame.igdbRating} />
+                  <Field label="My Rating" value={selectedGame.myRating} />
+
+                  <Field label="Hours Played" value={selectedGame.hoursPlayed} />
+                  <Field label="Developer" value={selectedGame.developer} />
+
+                  <Field label="Date Added" value={selectedGame.dateAdded} />
+                  <Field label="Date Completed" value={selectedGame.dateCompleted} />
                 </div>
 
-                <div>
-                  <FieldRow k="IGDB rating" v={selectedGame.igdbRating || "—"} />
-                  <FieldRow k="My rating" v={selectedGame.myRating || "—"} />
-                  <FieldRow k="Hours played" v={selectedGame.hoursPlayed || "—"} />
-                  <FieldRow k="Completed" v={selectedGame.completed ? "Yes" : "No"} />
-                  {selectedGame.completed && <FieldRow k="Date completed" v={selectedGame.dateCompleted || "—"} />}
+                {/* Description full width */}
+                <div style={{ marginTop: 10 }}>
+                  <Field
+                    label="Description"
+                    value={
+                      selectedGame.description ? (
+                        <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div>
+                      ) : (
+                        ""
+                      )
+                    }
+                  />
                 </div>
-              </div>
-
-              <div style={{ marginTop: 12, fontSize: 12, color: COLORS.muted }}>
-                {selectedGame.igdbId ? `IGDB_ID: ${selectedGame.igdbId}` : ""}
               </div>
             </div>
+
+            <style>{`
+              @media (max-width: 900px) {
+                .modalStack { flex-direction: column !important; }
+              }
+            `}</style>
           </div>
         </div>
       )}
