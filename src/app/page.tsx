@@ -673,7 +673,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   const [isMobile, setIsMobile] = useState(false);
-  const [tileSize, setTileSize] = useState(130); // desktop default
+  const [tileSize, setTileSize] = useState(120); // desktop default
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
