@@ -1,11 +1,10 @@
 /* =========================================================
    Chris' Game Library — v1.0.7
    Notes:
-   - Fix: Stats label alignment (column 1 + column 2 labels start at consistent x)
-   - Keep: Existing font (no font imports/changes)
-   - Keep: Top-right filtered count number only
-   - Keep: Default cover size 130 desktop / 100 mobile
-========================================================= */
+   - Adds click-to-open modal details view for each cover
+   - Modal shows cover + hero screenshot + key fields from the Web CSV
+   - Close via X, Esc, or clicking the overlay
+   ========================================================= */
 
 "use client";
 
@@ -32,6 +31,14 @@ type Game = {
   backlog: string;
   completed: string;
   dateCompleted: string;
+
+  // NEW (from your headers)
+  igdbRating: string;
+  myRating: string;
+  hoursPlayed: string;
+  developer: string;
+  description: string;
+  screenshotUrl: string;
 };
 
 const COLORS = {
@@ -47,7 +54,7 @@ const COLORS = {
   rowActive: "rgba(96,165,250,0.14)",
   badgeBg: "rgba(255,255,255,0.06)",
   badgeBorder: "rgba(255,255,255,0.10)",
-  accent: "#22c55e",
+  accent: "#22c55e", // green underline
   statNumber: "#168584",
 };
 
@@ -64,7 +71,14 @@ function splitTags(s: string) {
 
 function toBool(v: string) {
   const s = norm(v).toLowerCase();
-  return s === "true" || s === "yes" || s === "y" || s === "1" || s === "checked" || s === "x";
+  return (
+    s === "true" ||
+    s === "yes" ||
+    s === "y" ||
+    s === "1" ||
+    s === "checked" ||
+    s === "x"
+  );
 }
 
 function toDateNum(s: string) {
@@ -75,7 +89,9 @@ function toDateNum(s: string) {
 }
 
 function uniqueSorted(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b)
+  );
 }
 
 function titleKey(title: string) {
@@ -90,6 +106,14 @@ function pickCover(row: Row) {
   return "";
 }
 
+function pickHeroScreenshot(row: Row) {
+  const s = norm(row["ScreenshotURL"]);
+  if (!s) return "";
+  // Allow either a single URL or comma-separated list; we take the first as hero.
+  const first = s.split(",")[0]?.trim() ?? "";
+  return first.startsWith("http") ? first : "";
+}
+
 function rowToGame(row: Row): Game | null {
   const title = norm(row["Title"]);
   if (!title) return null;
@@ -98,6 +122,7 @@ function rowToGame(row: Row): Game | null {
     title,
     coverUrl: pickCover(row),
 
+    // your Web sheet uses "Platform" (singular) right now; still supports legacy "Platforms"
     platforms: splitTags(row["Platforms"] || row["Platform"]),
     genres: splitTags(row["Genres"]),
     yearPlayed: splitTags(row["YearPlayed"]),
@@ -112,6 +137,14 @@ function rowToGame(row: Row): Game | null {
     backlog: norm(row["Backlog"]),
     completed: norm(row["Completed"]),
     dateCompleted: norm(row["DateCompleted"]),
+
+    // NEW fields (from your headers)
+    igdbRating: norm(row["IGDB_Rating"]),
+    myRating: norm(row["My_Rating"]),
+    hoursPlayed: norm(row["HoursPlayed"]),
+    developer: norm(row["Developer"]),
+    description: norm(row["Description"]),
+    screenshotUrl: pickHeroScreenshot(row),
   };
 }
 
@@ -134,32 +167,45 @@ function dedupeByTitle(rows: Game[]) {
     const yearPlayed = uniqueSorted([...existing.yearPlayed, ...g.yearPlayed]);
 
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
-    const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
+    const completed =
+      toBool(existing.completed) || toBool(g.completed) ? "true" : "";
 
     // releaseDate: earliest non-empty
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
     if (!aRel && bRel) releaseDate = g.releaseDate;
-    else if (aRel && bRel) releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
+    else if (aRel && bRel)
+      releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
     // dateAdded: earliest non-empty
     const aAdded = toDateNum(existing.dateAdded);
     const bAdded = toDateNum(g.dateAdded);
     let dateAdded = existing.dateAdded;
     if (!aAdded && bAdded) dateAdded = g.dateAdded;
-    else if (aAdded && bAdded) dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
+    else if (aAdded && bAdded)
+      dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
 
     // dateCompleted: latest non-empty
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
     if (!aComp && bComp) dateCompleted = g.dateCompleted;
-    else if (aComp && bComp) dateCompleted = aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
+    else if (aComp && bComp)
+      dateCompleted =
+        aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
 
     const status = existing.status || g.status;
     const ownership = existing.ownership || g.ownership;
     const format = existing.format || g.format;
+
+    // Prefer non-empty values for detail fields
+    const igdbRating = existing.igdbRating || g.igdbRating;
+    const myRating = existing.myRating || g.myRating;
+    const hoursPlayed = existing.hoursPlayed || g.hoursPlayed;
+    const developer = existing.developer || g.developer;
+    const description = existing.description || g.description;
+    const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
     map.set(k, {
       ...existing,
@@ -175,6 +221,12 @@ function dedupeByTitle(rows: Game[]) {
       status,
       ownership,
       format,
+      igdbRating,
+      myRating,
+      hoursPlayed,
+      developer,
+      description,
+      screenshotUrl,
     });
   }
 
@@ -191,7 +243,13 @@ function buildBaseForFacet(args: {
   selectedGenres: string[];
   selectedYearsPlayed: string[];
   activeTab: "games" | "nowPlaying" | "queued" | "wishlist" | "completed";
-  exclude: "platforms" | "status" | "ownership" | "format" | "genres" | "yearsPlayed";
+  exclude:
+    | "platforms"
+    | "status"
+    | "ownership"
+    | "format"
+    | "genres"
+    | "yearsPlayed";
 }) {
   const {
     games,
@@ -229,7 +287,9 @@ function buildBaseForFacet(args: {
     // Genres = AND
     if (exclude !== "genres" && selectedGenres.length) {
       const set = new Set(g.genres.map((x) => x.toLowerCase()));
-      for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
+      for (const sg of selectedGenres) {
+        if (!set.has(sg.toLowerCase())) return false;
+      }
     }
 
     // Years Played = OR
@@ -288,7 +348,8 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-function PlusMinus({ open }: { open: boolean }) {
+function PlusChevron({ open }: { open: boolean }) {
+  // plus when closed, minus when open
   return (
     <span
       style={{
@@ -298,16 +359,16 @@ function PlusMinus({ open }: { open: boolean }) {
         alignItems: "center",
         justifyContent: "center",
         borderRadius: 6,
-        border: `1px solid ${COLORS.border}`,
-        background: "transparent",
+        border: `1px solid ${COLORS.badgeBorder}`,
+        background: "rgba(255,255,255,0.03)",
         color: COLORS.muted,
+        userSelect: "none",
         fontSize: 14,
         lineHeight: 1,
-        userSelect: "none",
       }}
       aria-hidden
     >
-      {open ? "−" : "+"}
+      {open ? "–" : "+"}
     </span>
   );
 }
@@ -356,7 +417,7 @@ function CollapsibleSection({
           >
             {title}
           </div>
-          <PlusMinus open={open} />
+          <PlusChevron open={open} />
         </div>
       </button>
 
@@ -517,7 +578,6 @@ function TabButton({
         padding: "8px 6px",
         position: "relative",
         opacity: active ? 1 : 0.72,
-        whiteSpace: "nowrap",
       }}
     >
       {label}
@@ -536,36 +596,17 @@ function TabButton({
   );
 }
 
-/** A compact stat row: number left, label right (label aligned via fixed number width) */
+// Compact stat block (keeps your locked 2-col layout in the sidebar)
 function StatCompact({
   value,
   label,
-  valueWidth = 44,
 }: {
   value: number;
   label: string;
-  valueWidth?: number;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        gap: 10,
-        minWidth: 0,
-      }}
-    >
-      <div
-        style={{
-          width: valueWidth,
-          textAlign: "right",
-          fontSize: 18,
-          fontWeight: 900,
-          lineHeight: 1.05,
-          color: COLORS.statNumber,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+      <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.statNumber, lineHeight: 1.05 }}>
         {value}
       </div>
       <div
@@ -573,14 +614,37 @@ function StatCompact({
           fontSize: 12,
           fontWeight: 800,
           color: COLORS.muted,
-          letterSpacing: "0.01em",
+          letterSpacing: "0.02em",
+          textTransform: "uppercase",
           whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
         }}
       >
         {label}
       </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  if (value == null) return null;
+  const str = typeof value === "string" ? value : "";
+  if (typeof value === "string" && !norm(str)) return null;
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 10, alignItems: "start" }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: COLORS.muted,
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          paddingTop: 2,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.35 }}>{value}</div>
     </div>
   );
 }
@@ -591,9 +655,7 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Default cover size: 130 desktop, 100 mobile
-  const [tileSize, setTileSize] = useState(130);
-
+  const [tileSize, setTileSize] = useState(130); // desktop default
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -604,9 +666,13 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed">("games");
+  const [activeTab, setActiveTab] = useState<
+    "games" | "nowPlaying" | "queued" | "wishlist" | "completed"
+  >("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">("releaseDate");
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">(
+    "releaseDate"
+  );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -616,26 +682,10 @@ export default function HomePage() {
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
 
-  const [filtersOpen, setFiltersOpen] = useState(false); // default closed
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  useEffect(() => {
-    // Responsive default tile size without ts-expect-error
-    if (typeof window === "undefined") return;
-
-    const mq = window.matchMedia("(max-width: 900px)");
-    const apply = () => setTileSize(mq.matches ? 100 : 130);
-
-    apply();
-
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", apply);
-      return () => mq.removeEventListener("change", apply);
-    }
-
-    // legacy Safari
-    (mq as any).addListener?.(apply);
-    return () => (mq as any).removeListener?.(apply);
-  }, []);
+  // Modal
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -654,6 +704,28 @@ export default function HomePage() {
 
     load();
   }, [csvUrl]);
+
+  // Desktop/mobile cover defaults (no TS hack)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mq = window.matchMedia("(max-width: 900px)");
+    const apply = () => setTileSize(mq.matches ? 100 : 130);
+    apply();
+
+    const onChange = () => apply();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // Close modal on ESC
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setSelectedGame(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const platforms = useMemo(() => uniqueSorted(games.flatMap((g) => g.platforms)), [games]);
   const statuses = useMemo(() => uniqueSorted(games.map((g) => g.status)), [games]);
@@ -700,9 +772,12 @@ export default function HomePage() {
 
     return base.sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
-      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
+      if (sortBy === "releaseDate")
+        return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+      if (sortBy === "dateCompleted")
+        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateAdded")
+        return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
   }, [
@@ -733,7 +808,12 @@ export default function HomePage() {
       exclude: "platforms",
     });
     return countByTagList(base, (g) => g.platforms);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games, q,
+    selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed,
+    activeTab
+  ]);
 
   const statusCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -749,7 +829,12 @@ export default function HomePage() {
       exclude: "status",
     });
     return countByKey(base, (g) => g.status);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games, q,
+    selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed,
+    activeTab
+  ]);
 
   const ownershipCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -765,7 +850,12 @@ export default function HomePage() {
       exclude: "ownership",
     });
     return countByKey(base, (g) => g.ownership);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games, q,
+    selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed,
+    activeTab
+  ]);
 
   const formatCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -781,7 +871,12 @@ export default function HomePage() {
       exclude: "format",
     });
     return countByKey(base, (g) => g.format);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games, q,
+    selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed,
+    activeTab
+  ]);
 
   const yearsPlayedCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -797,7 +892,12 @@ export default function HomePage() {
       exclude: "yearsPlayed",
     });
     return countByTagList(base, (g) => g.yearPlayed);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games, q,
+    selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed,
+    activeTab
+  ]);
 
   const genreCounts = useMemo(() => {
     const base = buildBaseForFacet({
@@ -813,14 +913,23 @@ export default function HomePage() {
       exclude: "genres",
     });
     return countByTagList(base, (g) => g.genres);
-  }, [games, q, selectedPlatform, selectedStatus, selectedOwnership, selectedFormat, selectedGenres, selectedYearsPlayed, activeTab]);
+  }, [
+    games, q,
+    selectedPlatform, selectedStatus, selectedOwnership, selectedFormat,
+    selectedGenres, selectedYearsPlayed,
+    activeTab
+  ]);
 
   function toggleGenre(genre: string) {
-    setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
+    setSelectedGenres((prev) =>
+      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
+    );
   }
 
   function toggleYearPlayed(year: string) {
-    setSelectedYearsPlayed((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
+    setSelectedYearsPlayed((prev) =>
+      prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]
+    );
   }
 
   function clearFilters() {
@@ -836,13 +945,13 @@ export default function HomePage() {
   const headerAvatarUrl =
     "https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no";
 
+  // Stats (locked layout)
+  const year = new Date().getFullYear();
   const gamesTotal = games.length;
   const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
   const queuedTotal = games.filter((g) => norm(g.status) === "Queued").length;
   const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length;
   const completedTotal = games.filter((g) => toBool(g.completed)).length;
-
-  const year = new Date().getFullYear();
   const playedThisYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
 
   const sidebarStyle: React.CSSProperties = {
@@ -894,13 +1003,225 @@ export default function HomePage() {
           }
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
-          .tabsRow { gap: 10px !important; }
-          .tabsRow button { font-size: 13px !important; padding: 6px 4px !important; }
         }
         .mobileOnly { display: none; }
+
+        .modalOverlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.72);
+          z-index: 80;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+        }
+        .modalCard {
+          width: min(980px, 100%);
+          max-height: min(82vh, 860px);
+          overflow: auto;
+          background: ${COLORS.panel};
+          border: 1px solid ${COLORS.border};
+          border-radius: 18px;
+          box-shadow: 0 30px 80px rgba(0,0,0,0.75);
+        }
       `}</style>
 
       {filtersOpen && <div className="overlay" onClick={() => setFiltersOpen(false)} />}
+
+      {selectedGame && (
+        <div
+          className="modalOverlay"
+          onClick={() => setSelectedGame(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                padding: "12px 14px",
+                background: "rgba(15,17,23,0.92)",
+                backdropFilter: "blur(8px)",
+                borderBottom: `1px solid ${COLORS.border}`,
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 900 }}>{selectedGame.title}</div>
+              <button
+                onClick={() => setSelectedGame(null)}
+                style={{
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.card,
+                  color: COLORS.text,
+                  cursor: "pointer",
+                  borderRadius: 12,
+                  padding: "8px 10px",
+                  fontWeight: 900,
+                  fontSize: 12,
+                }}
+                aria-label="Close"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: 14, display: "grid", gridTemplateColumns: "220px 1fr", gap: 14 }}>
+              {/* Left: cover */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div
+                  style={{
+                    width: "100%",
+                    aspectRatio: "2 / 3",
+                    background: COLORS.card,
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                >
+                  {selectedGame.coverUrl ? (
+                    <img
+                      src={selectedGame.coverUrl}
+                      alt={selectedGame.title}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: COLORS.muted,
+                        fontSize: 12,
+                      }}
+                    >
+                      No cover
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {norm(selectedGame.status) && (
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: COLORS.text,
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.05)",
+                      border: `1px solid ${COLORS.badgeBorder}`,
+                    }}>
+                      {selectedGame.status}
+                    </span>
+                  )}
+                  {norm(selectedGame.ownership) && (
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: COLORS.text,
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.05)",
+                      border: `1px solid ${COLORS.badgeBorder}`,
+                    }}>
+                      {selectedGame.ownership}
+                    </span>
+                  )}
+                  {toBool(selectedGame.completed) && (
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 900,
+                      color: COLORS.text,
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      background: "rgba(34,197,94,0.12)",
+                      border: `1px solid rgba(34,197,94,0.22)`,
+                    }}>
+                      Completed
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: screenshot + info */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {selectedGame.screenshotUrl && (
+                  <div
+                    style={{
+                      width: "100%",
+                      aspectRatio: "16 / 9",
+                      background: COLORS.card,
+                      borderRadius: 14,
+                      overflow: "hidden",
+                      border: `1px solid ${COLORS.border}`,
+                    }}
+                  >
+                    <img
+                      src={selectedGame.screenshotUrl}
+                      alt={`${selectedGame.title} screenshot`}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      loading="lazy"
+                    />
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    border: `1px solid ${COLORS.border}`,
+                    background: "rgba(255,255,255,0.02)",
+                    borderRadius: 14,
+                    padding: 12,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                >
+                  <InfoRow label="Release" value={selectedGame.releaseDate} />
+                  <InfoRow
+                    label="Platform"
+                    value={selectedGame.platforms.length ? selectedGame.platforms.join(", ") : ""}
+                  />
+                  <InfoRow label="Developer" value={selectedGame.developer} />
+                  <InfoRow label="IGDB rating" value={selectedGame.igdbRating} />
+                  <InfoRow label="My rating" value={selectedGame.myRating} />
+                  <InfoRow label="Hours" value={selectedGame.hoursPlayed} />
+                  <InfoRow
+                    label="Year played"
+                    value={selectedGame.yearPlayed.length ? selectedGame.yearPlayed.join(", ") : ""}
+                  />
+
+                  {norm(selectedGame.description) && (
+                    <div style={{ marginTop: 4 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          color: COLORS.muted,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          marginBottom: 6,
+                        }}
+                      >
+                        Description
+                      </div>
+                      <div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
+                        {selectedGame.description}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <aside className={`sidebar ${filtersOpen ? "open" : ""}`} style={sidebarStyle} aria-label="Filters">
         <div
@@ -965,32 +1286,33 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>SORT</div>
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <SmallSelect value={sortBy} onChange={(v) => setSortBy(v as any)}>
+              <SmallSelect
+                value={sortBy}
+                onChange={(v) =>
+                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")
+                }
+              >
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
                 <option value="dateAdded">Date Added</option>
                 <option value="dateCompleted">Date Completed</option>
               </SmallSelect>
 
-              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as any)}>
+              <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as "asc" | "desc")}>
                 <option value="asc">Asc</option>
                 <option value="desc">Desc</option>
               </SmallSelect>
             </div>
           </div>
 
-          {/* Stats block (2 columns) */}
+          {/* Stats (locked 2-col layout) */}
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 6 }}>STATS</div>
-
-            {/* tighter width, 2 columns like your screenshot */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 16, rowGap: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 8 }}>STATS</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <StatCompact value={gamesTotal} label="Games" />
               <StatCompact value={playedThisYear} label={`in ${year}`} />
-
               <StatCompact value={nowPlayingTotal} label="Now Playing" />
               <StatCompact value={queuedTotal} label="Queued" />
-
               <StatCompact value={wishlistTotal} label="Wishlist" />
               <StatCompact value={completedTotal} label="Completed" />
             </div>
@@ -1011,27 +1333,57 @@ export default function HomePage() {
         </div>
 
         <CollapsibleSection title="Platform" open={openPlatform} setOpen={setOpenPlatform}>
-          <FacetRowsSingle options={platforms} counts={platformCounts} selected={selectedPlatform} onSelect={setSelectedPlatform} />
+          <FacetRowsSingle
+            options={platforms}
+            counts={platformCounts}
+            selected={selectedPlatform}
+            onSelect={setSelectedPlatform}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Status" open={openStatus} setOpen={setOpenStatus}>
-          <FacetRowsSingle options={statuses} counts={statusCounts} selected={selectedStatus} onSelect={setSelectedStatus} />
+          <FacetRowsSingle
+            options={statuses}
+            counts={statusCounts}
+            selected={selectedStatus}
+            onSelect={setSelectedStatus}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
+          <FacetRowsSingle
+            options={ownerships}
+            counts={ownershipCounts}
+            selected={selectedOwnership}
+            onSelect={setSelectedOwnership}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
-          <FacetRowsSingle options={formats} counts={formatCounts} selected={selectedFormat} onSelect={setSelectedFormat} />
+          <FacetRowsSingle
+            options={formats}
+            counts={formatCounts}
+            selected={selectedFormat}
+            onSelect={setSelectedFormat}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
+          <FacetRowsMulti
+            options={allYearsPlayed}
+            counts={yearsPlayedCounts}
+            selected={selectedYearsPlayed}
+            onToggle={toggleYearPlayed}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
+          <FacetRowsMulti
+            options={allGenres}
+            counts={genreCounts}
+            selected={selectedGenres}
+            onToggle={toggleGenre}
+          />
         </CollapsibleSection>
 
         <button
@@ -1075,15 +1427,11 @@ export default function HomePage() {
             >
               Filters
             </button>
-
-            {/* top-right count number only */}
-            <div style={{ fontSize: 14, fontWeight: 900, color: COLORS.text, fontVariantNumeric: "tabular-nums" }}>
-              {filtered.length}
-            </div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>{filtered.length}</div>
           </div>
         </div>
 
-        {/* Top tabs (show on mobile too; CSS shrinks them) */}
+        {/* Top nav */}
         <div
           style={{
             display: "flex",
@@ -1093,7 +1441,7 @@ export default function HomePage() {
             marginBottom: 14,
           }}
         >
-          <div className="tabsRow" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
             <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
             <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
@@ -1101,8 +1449,8 @@ export default function HomePage() {
             <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
           </div>
 
-          {/* desktop top-right count number only */}
-          <div className="desktopOnly" style={{ fontSize: 16, fontWeight: 900, fontVariantNumeric: "tabular-nums" }}>
+          {/* top-right count (number only) */}
+          <div className="desktopOnly" style={{ fontSize: 18, fontWeight: 900 }}>
             {filtered.length}
           </div>
         </div>
@@ -1118,16 +1466,21 @@ export default function HomePage() {
             }}
           >
             {filtered.map((g, i) => (
-              <div
+              <button
                 key={`${titleKey(g.title)}-${i}`}
+                onClick={() => setSelectedGame(g)}
                 style={{
                   aspectRatio: "2 / 3",
                   background: COLORS.card,
                   borderRadius: 14,
                   overflow: "hidden",
                   boxShadow: "0 20px 40px rgba(0,0,0,.6)",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
                 }}
                 title={g.title}
+                aria-label={`Open details for ${g.title}`}
               >
                 {g.coverUrl ? (
                   <img
@@ -1153,7 +1506,7 @@ export default function HomePage() {
                     No cover
                   </div>
                 )}
-              </div>
+              </button>
             ))}
           </div>
         )}
