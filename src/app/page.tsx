@@ -1,3 +1,11 @@
+/**
+ * GG Clone — Web App
+ * Version: v1.0.1
+ * Notes:
+ *  - Top tabs: Games, Now Playing, Backlog (filters Status="Queued"), Wishlist, Completed (Completed=true)
+ *  - Sidebar collapsibles: change chevron arrow to plus/minus icon
+ */
+
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -198,7 +206,7 @@ function buildBaseForFacet(args: {
   onlyCompleted: boolean;
   onlyNowPlaying: boolean;
   onlyAbandoned: boolean;
-  activeTab: "games" | "queued" | "wishlist";
+  activeTab: "games" | "nowPlaying" | "backlog" | "wishlist" | "completed";
   exclude:
     | "platforms"
     | "status"
@@ -230,8 +238,10 @@ function buildBaseForFacet(args: {
     if (query && !g.title.toLowerCase().includes(query)) return false;
 
     // Top tabs
-    if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
+    if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
+    if (activeTab === "backlog" && norm(g.status) !== "Queued") return false; // per your request
     if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
+    if (activeTab === "completed" && !toBool(g.completed)) return false;
 
     // Checkboxes
     if (onlyBacklog && !toBool(g.backlog)) return false;
@@ -312,22 +322,26 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-function Chevron({ open }: { open: boolean }) {
+// ✅ plus/minus icon (replaces arrow)
+function PlusMinus({ open }: { open: boolean }) {
   return (
     <span
       style={{
-        display: "inline-block",
-        width: 16,
-        height: 16,
-        transform: open ? "rotate(90deg)" : "rotate(0deg)",
-        transition: "transform 120ms ease",
+        display: "inline-flex",
+        width: 18,
+        height: 18,
+        alignItems: "center",
+        justifyContent: "center",
         color: COLORS.muted,
         userSelect: "none",
-        fontSize: 12,
+        fontSize: 16,
+        fontWeight: 900,
+        lineHeight: 1,
       }}
       aria-hidden
+      title={open ? "Collapse" : "Expand"}
     >
-      ▶
+      {open ? "−" : "+"}
     </span>
   );
 }
@@ -376,7 +390,7 @@ function CollapsibleSection({
           >
             {title}
           </div>
-          <Chevron open={open} />
+          <PlusMinus open={open} />
         </div>
       </button>
 
@@ -422,8 +436,21 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -474,8 +501,21 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -559,6 +599,7 @@ function TabButton({
   return (
     <button
       onClick={onClick}
+      className="topTab"
       style={{
         border: "none",
         background: "transparent",
@@ -569,6 +610,7 @@ function TabButton({
         padding: "8px 6px",
         position: "relative",
         opacity: active ? 1 : 0.72,
+        whiteSpace: "nowrap",
       }}
     >
       {label}
@@ -587,19 +629,28 @@ function TabButton({
   );
 }
 
-function Stat({
-  value,
-  label,
-}: {
-  value: number;
-  label: string;
-}) {
+function Stat({ value, label }: { value: number; label: string }) {
   return (
     <div style={{ textAlign: "right" }}>
-      <div style={{ fontSize: 18, fontWeight: 900, color: COLORS.text, lineHeight: 1.05 }}>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 900,
+          color: COLORS.text,
+          lineHeight: 1.05,
+        }}
+      >
         {value}
       </div>
-      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: COLORS.muted,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
         {label}
       </div>
     </div>
@@ -612,7 +663,7 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tileSize, setTileSize] = useState(100); // ✅ default 100
+  const [tileSize, setTileSize] = useState(100); // default 100
   const [q, setQ] = useState("");
 
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
@@ -628,11 +679,13 @@ export default function HomePage() {
   const [onlyNowPlaying, setOnlyNowPlaying] = useState(false);
   const [onlyAbandoned, setOnlyAbandoned] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"games" | "queued" | "wishlist">("games");
+  const [activeTab, setActiveTab] = useState<
+    "games" | "nowPlaying" | "backlog" | "wishlist" | "completed"
+  >("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">(
-    "releaseDate"
-  );
+  const [sortBy, setSortBy] = useState<
+    "title" | "releaseDate" | "dateCompleted" | "dateAdded"
+  >("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -642,7 +695,7 @@ export default function HomePage() {
   const [openYearsPlayed, setOpenYearsPlayed] = useState(false);
   const [openGenres, setOpenGenres] = useState(false);
 
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false); // default closed
 
   useEffect(() => {
     async function load() {
@@ -675,9 +728,13 @@ export default function HomePage() {
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
-      if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
+      // Top tabs
+      if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
+      if (activeTab === "backlog" && norm(g.status) !== "Queued") return false; // backlog tab = queued status
       if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
+      if (activeTab === "completed" && !toBool(g.completed)) return false;
 
+      // Checkboxes
       if (onlyBacklog && !toBool(g.backlog)) return false;
       if (onlyCompleted && !toBool(g.completed)) return false;
       if (onlyNowPlaying && norm(g.status) !== "Now Playing") return false;
@@ -692,11 +749,13 @@ export default function HomePage() {
         if (!set.has(selectedPlatform.toLowerCase())) return false;
       }
 
+      // Genres = AND
       if (selectedGenres.length) {
         const set = new Set(g.genres.map((x) => x.toLowerCase()));
         for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
       }
 
+      // Years Played = OR
       if (selectedYearsPlayed.length) {
         const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
         const any = selectedYearsPlayed.some((y) => set.has(y.toLowerCase()));
@@ -945,6 +1004,7 @@ export default function HomePage() {
       <style>{`
         aside::-webkit-scrollbar { display: none; }
 
+        /* make the 5 top tabs fit better on mobile */
         @media (max-width: 900px) {
           .sidebar {
             position: fixed !important;
@@ -976,6 +1036,17 @@ export default function HomePage() {
           }
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
+
+          .topTabsWrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+          }
+          .topTabsWrap::-webkit-scrollbar { display: none; }
+          .topTab {
+            font-size: 12px !important;
+            padding: 6px 6px !important;
+          }
         }
         .mobileOnly { display: none; }
       `}</style>
@@ -1201,10 +1272,12 @@ export default function HomePage() {
             marginBottom: 14,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div className="topTabsWrap" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-            <TabButton label="Backlog Queue" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+            <TabButton label="Backlog" active={activeTab === "backlog"} onClick={() => setActiveTab("backlog")} />
             <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
           </div>
 
           <div style={{ display: "flex", gap: 18 }}>
