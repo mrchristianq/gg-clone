@@ -2,9 +2,11 @@
    Chris' Game Library
    Version: 1.7.1
    Notes:
-   - Add: CustomOrder support (from Web sheet column "CustomOrder")
-   - Change: When top tab = "Queued", default sort becomes Custom Order (asc),
-            with fallback to Release Date for rows with no CustomOrder.
+   - Add: CustomOrder support (Web sheet column: "CustomOrder")
+   - Change: When top tab = "Queued", default sort becomes Custom Order (asc).
+             Items without CustomOrder sort after, by Release Date (newest first).
+   - Add: Sort dropdown option: Custom Order
+   - Keep: Everything else from v1.7.0 (stats block, layout, modal, tabs, etc.)
 ===================================================================================== */
 
 "use client";
@@ -42,7 +44,7 @@ type Game = {
   description: string;
   screenshotUrl: string; // hero
 
-  customOrder: string; // NEW: "CustomOrder"
+  customOrder: string; // ✅ Web sheet column: "CustomOrder"
 };
 
 const COLORS = {
@@ -86,12 +88,11 @@ function toDateNum(s: string) {
   return Number.isFinite(t) ? t : 0;
 }
 
-function toNumOrNaN(s: string) {
-  const v = norm(s);
-  if (!v) return NaN;
-  // allow "1", "2.0", "003", etc
-  const n = Number(v);
-  return Number.isFinite(n) ? n : NaN;
+function toNumOrNull(v: string) {
+  const s = norm(v);
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
 }
 
 function uniqueSorted(values: string[]) {
@@ -157,7 +158,7 @@ function rowToGame(row: Row): Game | null {
     description: norm(row["Description"]),
     screenshotUrl: pickScreenshot(row),
 
-    customOrder: norm(row["CustomOrder"]), // NEW
+    customOrder: norm(row["CustomOrder"]), // ✅
   };
 }
 
@@ -213,11 +214,13 @@ function dedupeByTitle(rows: Game[]) {
     const description = existing.description || g.description;
     const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
-    // NEW: keep the one that has a valid custom order, prefer existing if both
-    const existingNum = toNumOrNaN(existing.customOrder);
-    const incomingNum = toNumOrNaN(g.customOrder);
-    const customOrder =
-      Number.isFinite(existingNum) ? existing.customOrder : Number.isFinite(incomingNum) ? g.customOrder : "";
+    // ✅ CustomOrder: prefer the lowest numeric (if present), else first non-empty
+    const aCO = toNumOrNull(existing.customOrder);
+    const bCO = toNumOrNull(g.customOrder);
+    let customOrder = existing.customOrder;
+    if (aCO == null && bCO != null) customOrder = g.customOrder;
+    else if (aCO != null && bCO != null) customOrder = aCO <= bCO ? existing.customOrder : g.customOrder;
+    else if (!customOrder && g.customOrder) customOrder = g.customOrder;
 
     map.set(k, {
       ...existing,
@@ -647,7 +650,9 @@ function Field({
       <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", marginBottom: 6 }}>
         {label}
       </div>
-      <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>{value || <span style={{ color: COLORS.muted }}>—</span>}</div>
+      <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>
+        {value || <span style={{ color: COLORS.muted }}>—</span>}
+      </div>
     </div>
   );
 }
@@ -710,14 +715,6 @@ export default function HomePage() {
     return () => mq.removeListener(onChange);
   }, []);
 
-  // NEW: when entering "Queued" tab, default sort to Custom Order ASC
-  useEffect(() => {
-    if (activeTab === "queued") {
-      setSortBy("customOrder");
-      setSortDir("asc");
-    }
-  }, [activeTab]);
-
   useEffect(() => {
     async function load() {
       if (!csvUrl) return;
@@ -734,6 +731,19 @@ export default function HomePage() {
     }
     load();
   }, [csvUrl]);
+
+  // ✅ When tab is Queued, default sort = Custom Order asc
+  useEffect(() => {
+    if (activeTab === "queued") {
+      setSortBy("customOrder");
+      setSortDir("asc");
+    } else {
+      // If you leave queued and were on customOrder, revert to your normal default
+      setSortBy((prev) => (prev === "customOrder" ? "releaseDate" : prev));
+      setSortDir((prev) => (sortBy === "customOrder" ? "desc" : prev));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const platforms = useMemo(() => uniqueSorted(games.flatMap((g) => g.platform)), [games]);
   const statuses = useMemo(() => uniqueSorted(games.map((g) => g.status)), [games]);
@@ -800,39 +810,31 @@ export default function HomePage() {
     const dir = sortDir === "asc" ? 1 : -1;
 
     return base.sort((a, b) => {
-      // Custom Order rule:
-      // - items WITH a number come first
-      // - sort by that number (asc/desc based on dir)
-      // - items WITHOUT a number fall back to release date
-      // - stable-ish tie breaks by title
+      if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
+
+      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+
+      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+
+      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
+
       if (sortBy === "customOrder") {
-        const aN = toNumOrNaN(a.customOrder);
-        const bN = toNumOrNaN(b.customOrder);
-        const aHas = Number.isFinite(aN);
-        const bHas = Number.isFinite(bN);
+        const aN = toNumOrNull(a.customOrder);
+        const bN = toNumOrNull(b.customOrder);
 
-        if (aHas && bHas) {
-          const diff = (aN - bN) * dir;
-          if (diff !== 0) return diff;
-          // tie-break: release date (desc-ish based on dir), then title
-          const rel = (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-          if (rel !== 0) return rel;
-          return a.title.localeCompare(b.title);
+        // numbered items first (asc), then blanks
+        if (aN != null && bN != null) {
+          if (aN !== bN) return (aN - bN) * dir; // dir should be asc for queued
+          // tie-breaker: newest release first
+          return (toDateNum(b.releaseDate) - toDateNum(a.releaseDate));
         }
+        if (aN != null && bN == null) return -1;
+        if (aN == null && bN != null) return 1;
 
-        if (aHas && !bHas) return -1; // a first
-        if (!aHas && bHas) return 1; // b first
-
-        // neither has number => fallback to release date, then title
-        const rel = (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-        if (rel !== 0) return rel;
-        return a.title.localeCompare(b.title);
+        // both blank: newest release date first
+        return (toDateNum(b.releaseDate) - toDateNum(a.releaseDate));
       }
 
-      if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
-      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
   }, [
@@ -992,15 +994,13 @@ export default function HomePage() {
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <SmallSelect
                 value={sortBy}
-                onChange={(v) =>
-                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded" | "customOrder")
-                }
+                onChange={(v) => setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded" | "customOrder")}
               >
                 <option value="title">Title</option>
-                <option value="customOrder">Custom Order</option>
                 <option value="releaseDate">Release Date</option>
                 <option value="dateAdded">Date Added</option>
                 <option value="dateCompleted">Date Completed</option>
+                <option value="customOrder">Custom Order</option>
               </SmallSelect>
 
               <SmallSelect value={sortDir} onChange={(v) => setSortDir(v as "asc" | "desc")}>
@@ -1010,7 +1010,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Stats (locked) */}
+          {/* Stats */}
           <StatsBlock
             left={[
               { value: gamesTotal, label: "Games" },
