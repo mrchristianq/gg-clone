@@ -1,14 +1,10 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 1.5.2
+   Version: 1.7.1
    Notes:
-   - Fix: Detail modal no longer shows "Completed" twice (won’t show Status="Completed" pill)
-   - Keep: Stats styling + alignment (no ALL CAPS, labels line up, match locked look)
-   - Keep: Desktop tile default = 120, mobile default = 100
-   - Keep: 5 top tabs (Games / Now Playing / Queued / Wishlist / Completed) + top-right count
-   - Keep: Plus icons on facet headers
-   - Keep: Game detail modal layout (cover + tags left; screenshot + info right; info 2-col;
-           Description + Screenshot full-width)
+   - Add: CustomOrder support (from Web sheet column "CustomOrder")
+   - Change: When top tab = "Queued", default sort becomes Custom Order (asc),
+            with fallback to Release Date for rows with no CustomOrder.
 ===================================================================================== */
 
 "use client";
@@ -45,6 +41,8 @@ type Game = {
   developer: string;
   description: string;
   screenshotUrl: string; // hero
+
+  customOrder: string; // NEW: "CustomOrder"
 };
 
 const COLORS = {
@@ -78,14 +76,7 @@ function splitTags(s: string) {
 
 function toBool(v: string) {
   const s = norm(v).toLowerCase();
-  return (
-    s === "true" ||
-    s === "yes" ||
-    s === "y" ||
-    s === "1" ||
-    s === "checked" ||
-    s === "x"
-  );
+  return s === "true" || s === "yes" || s === "y" || s === "1" || s === "checked" || s === "x";
 }
 
 function toDateNum(s: string) {
@@ -93,6 +84,14 @@ function toDateNum(s: string) {
   if (!v) return 0;
   const t = Date.parse(v);
   return Number.isFinite(t) ? t : 0;
+}
+
+function toNumOrNaN(s: string) {
+  const v = norm(s);
+  if (!v) return NaN;
+  // allow "1", "2.0", "003", etc
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
 }
 
 function uniqueSorted(values: string[]) {
@@ -157,6 +156,8 @@ function rowToGame(row: Row): Game | null {
     developer: norm(row["Developer"]),
     description: norm(row["Description"]),
     screenshotUrl: pickScreenshot(row),
+
+    customOrder: norm(row["CustomOrder"]), // NEW
   };
 }
 
@@ -212,6 +213,12 @@ function dedupeByTitle(rows: Game[]) {
     const description = existing.description || g.description;
     const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
+    // NEW: keep the one that has a valid custom order, prefer existing if both
+    const existingNum = toNumOrNaN(existing.customOrder);
+    const incomingNum = toNumOrNaN(g.customOrder);
+    const customOrder =
+      Number.isFinite(existingNum) ? existing.customOrder : Number.isFinite(incomingNum) ? g.customOrder : "";
+
     map.set(k, {
       ...existing,
       coverUrl,
@@ -233,6 +240,7 @@ function dedupeByTitle(rows: Game[]) {
       developer,
       description,
       screenshotUrl,
+      customOrder,
     });
   }
 
@@ -397,21 +405,8 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                  opacity: c === 0 ? 0.55 : 1,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -462,21 +457,8 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                  opacity: c === 0 ? 0.55 : 1,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -591,15 +573,7 @@ function StatsBlock({
 
   return (
     <div style={{ marginTop: 10 }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: COLORS.muted,
-          marginBottom: 8,
-          letterSpacing: "0.04em",
-        }}
-      >
+      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 8, letterSpacing: "0.04em" }}>
         STATS
       </div>
 
@@ -653,7 +627,13 @@ function TagPill({ text }: { text: string }) {
   );
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+function Field({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
   return (
     <div
       style={{
@@ -664,20 +644,10 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
         minHeight: 56,
       }}
     >
-      <div
-        style={{
-          color: COLORS.muted,
-          fontSize: 11,
-          fontWeight: 800,
-          letterSpacing: "0.04em",
-          marginBottom: 6,
-        }}
-      >
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", marginBottom: 6 }}>
         {label}
       </div>
-      <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>
-        {value || <span style={{ color: COLORS.muted }}>—</span>}
-      </div>
+      <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>{value || <span style={{ color: COLORS.muted }}>—</span>}</div>
     </div>
   );
 }
@@ -701,11 +671,9 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<
-    "games" | "nowPlaying" | "queued" | "wishlist" | "completed"
-  >("games");
+  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed">("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded">(
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "customOrder">(
     "releaseDate"
   );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -742,6 +710,14 @@ export default function HomePage() {
     return () => mq.removeListener(onChange);
   }, []);
 
+  // NEW: when entering "Queued" tab, default sort to Custom Order ASC
+  useEffect(() => {
+    if (activeTab === "queued") {
+      setSortBy("customOrder");
+      setSortDir("asc");
+    }
+  }, [activeTab]);
+
   useEffect(() => {
     async function load() {
       if (!csvUrl) return;
@@ -767,14 +743,10 @@ export default function HomePage() {
   const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
 
   function toggleGenre(genre: string) {
-    setSelectedGenres((prev) =>
-      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
-    );
+    setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
   }
   function toggleYearPlayed(year: string) {
-    setSelectedYearsPlayed((prev) =>
-      prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]
-    );
+    setSelectedYearsPlayed((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
   }
 
   function clearFilters() {
@@ -828,10 +800,38 @@ export default function HomePage() {
     const dir = sortDir === "asc" ? 1 : -1;
 
     return base.sort((a, b) => {
+      // Custom Order rule:
+      // - items WITH a number come first
+      // - sort by that number (asc/desc based on dir)
+      // - items WITHOUT a number fall back to release date
+      // - stable-ish tie breaks by title
+      if (sortBy === "customOrder") {
+        const aN = toNumOrNaN(a.customOrder);
+        const bN = toNumOrNaN(b.customOrder);
+        const aHas = Number.isFinite(aN);
+        const bHas = Number.isFinite(bN);
+
+        if (aHas && bHas) {
+          const diff = (aN - bN) * dir;
+          if (diff !== 0) return diff;
+          // tie-break: release date (desc-ish based on dir), then title
+          const rel = (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+          if (rel !== 0) return rel;
+          return a.title.localeCompare(b.title);
+        }
+
+        if (aHas && !bHas) return -1; // a first
+        if (!aHas && bHas) return 1; // b first
+
+        // neither has number => fallback to release date, then title
+        const rel = (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+        if (rel !== 0) return rel;
+        return a.title.localeCompare(b.title);
+      }
+
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
       if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted")
-        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
       if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
@@ -993,10 +993,11 @@ export default function HomePage() {
               <SmallSelect
                 value={sortBy}
                 onChange={(v) =>
-                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded")
+                  setSortBy(v as "title" | "releaseDate" | "dateCompleted" | "dateAdded" | "customOrder")
                 }
               >
                 <option value="title">Title</option>
+                <option value="customOrder">Custom Order</option>
                 <option value="releaseDate">Release Date</option>
                 <option value="dateAdded">Date Added</option>
                 <option value="dateCompleted">Date Completed</option>
@@ -1009,7 +1010,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ✅ Stats (locked) */}
+          {/* Stats (locked) */}
           <StatsBlock
             left={[
               { value: gamesTotal, label: "Games" },
@@ -1038,57 +1039,27 @@ export default function HomePage() {
         </div>
 
         <CollapsibleSection title="Platform" open={openPlatform} setOpen={setOpenPlatform}>
-          <FacetRowsSingle
-            options={platforms}
-            counts={platformCounts}
-            selected={selectedPlatform}
-            onSelect={setSelectedPlatform}
-          />
+          <FacetRowsSingle options={platforms} counts={platformCounts} selected={selectedPlatform} onSelect={setSelectedPlatform} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Status" open={openStatus} setOpen={setOpenStatus}>
-          <FacetRowsSingle
-            options={statuses}
-            counts={statusCounts}
-            selected={selectedStatus}
-            onSelect={setSelectedStatus}
-          />
+          <FacetRowsSingle options={statuses} counts={statusCounts} selected={selectedStatus} onSelect={setSelectedStatus} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle
-            options={ownerships}
-            counts={ownershipCounts}
-            selected={selectedOwnership}
-            onSelect={setSelectedOwnership}
-          />
+          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
-          <FacetRowsSingle
-            options={formats}
-            counts={formatCounts}
-            selected={selectedFormat}
-            onSelect={setSelectedFormat}
-          />
+          <FacetRowsSingle options={formats} counts={formatCounts} selected={selectedFormat} onSelect={setSelectedFormat} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti
-            options={allYearsPlayed}
-            counts={yearsPlayedCounts}
-            selected={selectedYearsPlayed}
-            onToggle={toggleYearPlayed}
-          />
+          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti
-            options={allGenres}
-            counts={genreCounts}
-            selected={selectedGenres}
-            onToggle={toggleGenre}
-          />
+          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
         </CollapsibleSection>
 
         <button
@@ -1149,23 +1120,13 @@ export default function HomePage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-            <TabButton
-              label="Now Playing"
-              active={activeTab === "nowPlaying"}
-              onClick={() => setActiveTab("nowPlaying")}
-            />
+            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
             <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
             <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-            <TabButton
-              label="Completed"
-              active={activeTab === "completed"}
-              onClick={() => setActiveTab("completed")}
-            />
+            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
           </div>
 
-          <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>
-            {topRightCount}
-          </div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>{topRightCount}</div>
         </div>
 
         {loading ? (
@@ -1283,7 +1244,7 @@ export default function HomePage() {
               ×
             </button>
 
-            <div className="modalStack" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
               {/* Left: cover + tags */}
               <div style={{ width: 260, flex: "0 0 auto" }}>
                 <div
@@ -1303,15 +1264,7 @@ export default function HomePage() {
                       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                     />
                   ) : (
-                    <div
-                      style={{
-                        height: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: COLORS.muted,
-                      }}
-                    >
+                    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
                       No cover
                     </div>
                   )}
@@ -1329,12 +1282,7 @@ export default function HomePage() {
                     ))}
                     {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
                     {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
-
-                    {/* ✅ Avoid duplicate: if Status is "Completed", don't show it; show Completed pill instead */}
-                    {selectedGame.status && norm(selectedGame.status).toLowerCase() !== "completed" ? (
-                      <TagPill text={selectedGame.status} />
-                    ) : null}
-
+                    {selectedGame.status ? <TagPill text={selectedGame.status} /> : null}
                     {toBool(selectedGame.completed) ? <TagPill text="Completed" /> : null}
                   </div>
                 </div>
