@@ -1071,14 +1071,13 @@ export default function HomePage() {
     apply();
     const onChange = () => apply();
 
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", onChange);
-      return () => mq.removeEventListener("change", onChange);
-    }
-    // @ts-expect-error legacy
-    mq.addListener(onChange);
-    // @ts-expect-error legacy
-    return () => mq.removeListener(onChange);
+if (typeof mq.addEventListener === "function") {
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+mq.addListener(onChange);
+return () => mq.removeListener(onChange);
   }, []);
 
   async function fetchCsvNow() {
