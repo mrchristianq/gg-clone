@@ -2,13 +2,13 @@
    Chris' Game Library
    Version: 2.0.0
    Notes:
-   - Add: Queued/Wishlist manual reorder via drag + drop (persists to Google Sheet)
-   - Add: Default sort for Queued/Wishlist = Order asc, then ReleaseDate desc (newest first)
-   - Keep: Desktop tile default = 120, mobile default = 100
-   - Keep: 5 top tabs + top-right count
-   - Keep: Plus icons on facet headers
-   - Keep: Game detail modal layout (cover/tags left; screenshot+info right; info 2-col;
-           Description full width; Completed only via Completed=true)
+   - Add: Drag & drop reorder for Queued + Wishlist tabs (updates Google Sheet via /sheets/update-order)
+   - Keep: v1.7.0 layout (sidebar left, stats locked, top 5 tabs, modal layout)
+   - Sort:
+       - Queued tab default: QueuedOrder asc (numbers first), then ReleaseDate desc (newest first)
+       - Wishlist tab default: WishlistOrder asc (numbers first), then ReleaseDate desc (newest first)
+       - Other tabs: existing sort dropdown
+   - Fix: Ensure POST includes orderType = "queued" | "wishlist" (matches API route validation)
 ===================================================================================== */
 
 "use client";
@@ -18,12 +18,12 @@ import Papa from "papaparse";
 
 import {
   DndContext,
-  DragEndEvent,
-  DragStartEvent,
   PointerSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   closestCenter,
+  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -63,8 +63,9 @@ type Game = {
   description: string;
   screenshotUrl: string;
 
-  queuedOrder: number;   // NEW
-  wishlistOrder: number; // NEW
+  // NEW: per-tab order columns from your Web sheet
+  queuedOrder: string; // "1", "2", ...
+  wishlistOrder: string;
 };
 
 const COLORS = {
@@ -98,7 +99,14 @@ function splitTags(s: string) {
 
 function toBool(v: string) {
   const s = norm(v).toLowerCase();
-  return s === "true" || s === "yes" || s === "y" || s === "1" || s === "checked" || s === "x";
+  return (
+    s === "true" ||
+    s === "yes" ||
+    s === "y" ||
+    s === "1" ||
+    s === "checked" ||
+    s === "x"
+  );
 }
 
 function toDateNum(s: string) {
@@ -108,9 +116,14 @@ function toDateNum(s: string) {
   return Number.isFinite(t) ? t : 0;
 }
 
-function toNum(v: string) {
-  const n = parseInt(norm(v), 10);
+function toNumOr0(v: string) {
+  const n = Number(norm(v));
   return Number.isFinite(n) ? n : 0;
+}
+
+function hasPositiveNumber(v: string) {
+  const n = Number(norm(v));
+  return Number.isFinite(n) && n > 0;
 }
 
 function uniqueSorted(values: string[]) {
@@ -176,8 +189,8 @@ function rowToGame(row: Row): Game | null {
     description: norm(row["Description"]),
     screenshotUrl: pickScreenshot(row),
 
-    queuedOrder: toNum(row["QueuedOrder"]),
-    wishlistOrder: toNum(row["WishlistOrder"]),
+    queuedOrder: norm(row["QueuedOrder"]),
+    wishlistOrder: norm(row["WishlistOrder"]),
   };
 }
 
@@ -199,26 +212,32 @@ function dedupeByTitle(rows: Game[]) {
     const genres = uniqueSorted([...existing.genres, ...g.genres]);
     const yearPlayed = uniqueSorted([...existing.yearPlayed, ...g.yearPlayed]);
 
-    const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
+    const completed =
+      toBool(existing.completed) || toBool(g.completed) ? "true" : "";
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
 
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
     if (!aRel && bRel) releaseDate = g.releaseDate;
-    else if (aRel && bRel) releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
+    else if (aRel && bRel)
+      releaseDate =
+        aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
     const aAdded = toDateNum(existing.dateAdded);
     const bAdded = toDateNum(g.dateAdded);
     let dateAdded = existing.dateAdded;
     if (!aAdded && bAdded) dateAdded = g.dateAdded;
-    else if (aAdded && bAdded) dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
+    else if (aAdded && bAdded)
+      dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
 
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
     if (!aComp && bComp) dateCompleted = g.dateCompleted;
-    else if (aComp && bComp) dateCompleted = aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
+    else if (aComp && bComp)
+      dateCompleted =
+        aComp >= bComp ? existing.dateCompleted : g.dateCompleted;
 
     const status = existing.status || g.status;
     const ownership = existing.ownership || g.ownership;
@@ -233,8 +252,18 @@ function dedupeByTitle(rows: Game[]) {
     const description = existing.description || g.description;
     const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
-    const queuedOrder = existing.queuedOrder || g.queuedOrder;
-    const wishlistOrder = existing.wishlistOrder || g.wishlistOrder;
+    // Prefer numeric order if one exists
+    const queuedOrder =
+      (hasPositiveNumber(existing.queuedOrder) ? existing.queuedOrder : "") ||
+      (hasPositiveNumber(g.queuedOrder) ? g.queuedOrder : "") ||
+      existing.queuedOrder ||
+      g.queuedOrder;
+
+    const wishlistOrder =
+      (hasPositiveNumber(existing.wishlistOrder) ? existing.wishlistOrder : "") ||
+      (hasPositiveNumber(g.wishlistOrder) ? g.wishlistOrder : "") ||
+      existing.wishlistOrder ||
+      g.wishlistOrder;
 
     map.set(k, {
       ...existing,
@@ -423,8 +452,21 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -475,8 +517,21 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -591,11 +646,26 @@ function StatsBlock({
 
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 8, letterSpacing: "0.04em" }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: COLORS.muted,
+          marginBottom: 8,
+          letterSpacing: "0.04em",
+        }}
+      >
         STATS
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 18, rowGap: 10 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          columnGap: 18,
+          rowGap: 10,
+        }}
+      >
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {left.map((s) => (
             <div key={s.label} style={rowStyle}>
@@ -649,7 +719,15 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
         minHeight: 56,
       }}
     >
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", marginBottom: 6 }}>
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.04em",
+          marginBottom: 6,
+        }}
+      >
         {label}
       </div>
       <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>
@@ -659,30 +737,28 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-/** DND tile */
-function SortableTile({
+/** Sortable cover card (for dnd-kit) */
+function SortableCover({
   id,
-  game,
+  title,
+  coverUrl,
   onClick,
-  tileSize,
 }: {
   id: string;
-  game: Game;
+  title: string;
+  coverUrl: string;
   onClick: () => void;
-  tileSize: number;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.7 : 1,
-    cursor: "grab",
+    opacity: isDragging ? 0.85 : 1,
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style}>
       <button
         onClick={onClick}
         style={{
@@ -693,7 +769,7 @@ function SortableTile({
           textAlign: "left",
           width: "100%",
         }}
-        title={game.title}
+        title={title}
       >
         <div
           style={{
@@ -702,13 +778,13 @@ function SortableTile({
             borderRadius: 14,
             overflow: "hidden",
             boxShadow: "0 20px 40px rgba(0,0,0,.6)",
-            outline: isDragging ? `2px solid ${COLORS.accent}` : "none",
+            position: "relative",
           }}
         >
-          {game.coverUrl ? (
+          {coverUrl ? (
             <img
-              src={game.coverUrl}
-              alt={game.title}
+              src={coverUrl}
+              alt={title}
               loading="lazy"
               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
               onError={(e) => {
@@ -729,6 +805,18 @@ function SortableTile({
               No cover
             </div>
           )}
+
+          {/* drag handle area (whole card) */}
+          <div
+            {...attributes}
+            {...listeners}
+            style={{
+              position: "absolute",
+              inset: 0,
+              cursor: "grab",
+            }}
+            aria-label="Drag"
+          />
         </div>
       </button>
     </div>
@@ -741,7 +829,7 @@ export default function HomePage() {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tileSize, setTileSize] = useState(120);
+  const [tileSize, setTileSize] = useState(120); // desktop default
   const [isMobile, setIsMobile] = useState(false);
 
   const [q, setQ] = useState("");
@@ -754,9 +842,13 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed">("games");
+  const [activeTab, setActiveTab] = useState<
+    "games" | "nowPlaying" | "queued" | "wishlist" | "completed"
+  >("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">("releaseDate");
+  const [sortBy, setSortBy] = useState<
+    "title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder"
+  >("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -767,15 +859,16 @@ export default function HomePage() {
   const [openGenres, setOpenGenres] = useState(false);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
-  // DND state
+  // Local drag ordering (ids in current view) – only used for queued/wishlist
   const [dragIds, setDragIds] = useState<string[]>([]);
-  const [savingOrder, setSavingOrder] = useState(false);
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
+  // DnD sensors
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor)
   );
 
   useEffect(() => {
@@ -816,6 +909,18 @@ export default function HomePage() {
     load();
   }, [csvUrl]);
 
+  // Default sort mode per tab
+  useEffect(() => {
+    if (activeTab === "queued") {
+      setSortBy("queuedOrder");
+      setSortDir("asc");
+    } else if (activeTab === "wishlist") {
+      setSortBy("wishlistOrder");
+      setSortDir("asc");
+    }
+    // other tabs: leave whatever user picked
+  }, [activeTab]);
+
   const platforms = useMemo(() => uniqueSorted(games.flatMap((g) => g.platform)), [games]);
   const statuses = useMemo(() => uniqueSorted(games.map((g) => g.status)), [games]);
   const ownerships = useMemo(() => uniqueSorted(games.map((g) => g.ownership)), [games]);
@@ -824,10 +929,14 @@ export default function HomePage() {
   const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
 
   function toggleGenre(genre: string) {
-    setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
+    setSelectedGenres((prev) =>
+      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
+    );
   }
   function toggleYearPlayed(year: string) {
-    setSelectedYearsPlayed((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
+    setSelectedYearsPlayed((prev) =>
+      prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]
+    );
   }
 
   function clearFilters() {
@@ -838,22 +947,6 @@ export default function HomePage() {
     setSelectedStatus("");
     setSelectedOwnership("");
     setSelectedFormat("");
-  }
-
-  // Enforce default sorting when switching tabs for Queued/Wishlist
-  useEffect(() => {
-    if (activeTab === "queued") {
-      setSortBy("queuedOrder");
-      setSortDir("asc");
-    } else if (activeTab === "wishlist") {
-      setSortBy("wishlistOrder");
-      setSortDir("asc");
-    }
-  }, [activeTab]);
-
-  function stableId(g: Game) {
-    // must be stable + unique for dnd
-    return g.igdbId ? `igdb:${g.igdbId}` : `title:${titleKey(g.title)}`;
   }
 
   const filtered = useMemo(() => {
@@ -894,23 +987,26 @@ export default function HomePage() {
       return true;
     });
 
-    // Special sorting: queuedOrder / wishlistOrder = numeric asc, then ReleaseDate newest first
-    if (sortBy === "queuedOrder" || sortBy === "wishlistOrder") {
-      const getOrder = (g: Game) => (sortBy === "queuedOrder" ? g.queuedOrder : g.wishlistOrder);
-
+    // Special: queued/wishlist order sort (numbers first), fallback to newest ReleaseDate
+    if (sortBy === "queuedOrder") {
       return base.sort((a, b) => {
-        const ao = getOrder(a);
-        const bo = getOrder(b);
-
-        const aHas = ao > 0;
-        const bHas = bo > 0;
-
-        if (aHas && bHas) return ao - bo;
+        const aHas = hasPositiveNumber(a.queuedOrder);
+        const bHas = hasPositiveNumber(b.queuedOrder);
         if (aHas && !bHas) return -1;
         if (!aHas && bHas) return 1;
+        if (aHas && bHas) return toNumOr0(a.queuedOrder) - toNumOr0(b.queuedOrder);
+        return toDateNum(b.releaseDate) - toDateNum(a.releaseDate); // newest first
+      });
+    }
 
-        // both missing -> newest release date first
-        return toDateNum(b.releaseDate) - toDateNum(a.releaseDate);
+    if (sortBy === "wishlistOrder") {
+      return base.sort((a, b) => {
+        const aHas = hasPositiveNumber(a.wishlistOrder);
+        const bHas = hasPositiveNumber(b.wishlistOrder);
+        if (aHas && !bHas) return -1;
+        if (!aHas && bHas) return 1;
+        if (aHas && bHas) return toNumOr0(a.wishlistOrder) - toNumOr0(b.wishlistOrder);
+        return toDateNum(b.releaseDate) - toDateNum(a.releaseDate); // newest first
       });
     }
 
@@ -918,9 +1014,12 @@ export default function HomePage() {
 
     return base.sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
-      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
+      if (sortBy === "releaseDate")
+        return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+      if (sortBy === "dateCompleted")
+        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateAdded")
+        return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
   }, [
@@ -937,17 +1036,19 @@ export default function HomePage() {
     sortDir,
   ]);
 
-  // Keep DND ids in sync for the reorderable tabs
-  const reorderEnabled = activeTab === "queued" || activeTab === "wishlist";
+  // When filtered changes, refresh drag ids for queued/wishlist
   useEffect(() => {
-    if (!reorderEnabled) {
+    if (activeTab !== "queued" && activeTab !== "wishlist") {
       setDragIds([]);
       return;
     }
-    setDragIds(filtered.map(stableId));
-  }, [reorderEnabled, filtered]);
 
-  // Facet counts
+    // Use IGDB_ID as stable key; fallback to title key
+    const ids = filtered.map((g) => g.igdbId || titleKey(g.title));
+    setDragIds(ids);
+  }, [filtered, activeTab]);
+
+  // Facet counts (simple; respects current view)
   const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
   const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
   const ownershipCounts = useMemo(() => countByKey(filtered, (g) => g.ownership), [filtered]);
@@ -982,79 +1083,83 @@ export default function HomePage() {
 
   const topRightCount = filtered.length;
 
-  // Persist order to sheet
-  async function persistOrder(nextIds: string[]) {
-    const orderColumn = activeTab === "queued" ? "QueuedOrder" : "WishlistOrder";
+  const isDragTab = activeTab === "queued" || activeTab === "wishlist";
 
-    // map ids -> game
+  async function persistOrderToSheet(nextIds: string[]) {
+    const orderType = activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
+
+    // Safety: never call API unless it matches route rules
+    if (orderType !== "queued" && orderType !== "wishlist") return;
+
+    // Build payload: [{ igdbId, order }]
+    // We need to map ids -> IGDB_ID
     const idToGame = new Map<string, Game>();
-    for (const g of filtered) idToGame.set(stableId(g), g);
+    for (const g of filtered) {
+      const key = g.igdbId || titleKey(g.title);
+      idToGame.set(key, g);
+    }
 
     const items = nextIds
       .map((id, idx) => {
         const g = idToGame.get(id);
-        if (!g?.igdbId) return null;
+        if (!g || !g.igdbId) return null;
         return { igdbId: g.igdbId, order: idx + 1 };
       })
       .filter(Boolean) as { igdbId: string; order: number }[];
 
-    if (!items.length) return;
+    const res = await fetch("/sheets/update-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderType, // ✅ MUST be exactly "queued" or "wishlist"
+        sheetName: "Web",
+        items,
+      }),
+    });
 
-    setSavingOrder(true);
-    try {
-      const res = await fetch("/sheets/update-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderColumn, items }),
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        console.error("Order save failed:", t);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSavingOrder(false);
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      console.error("Order save failed:", json || res.statusText);
+      throw new Error((json && json.error) || "Failed to save order");
     }
   }
 
-  function onDragStart(e: DragStartEvent) {
-    setActiveDragId(String(e.active.id));
-  }
-
-  async function onDragEnd(e: DragEndEvent) {
-    setActiveDragId(null);
-    if (!reorderEnabled) return;
-
-    const { active, over } = e;
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
     if (!over) return;
+    if (active.id === over.id) return;
 
-    const activeId = String(active.id);
-    const overId = String(over.id);
-    if (activeId === overId) return;
-
-    const oldIndex = dragIds.indexOf(activeId);
-    const newIndex = dragIds.indexOf(overId);
+    const oldIndex = dragIds.indexOf(String(active.id));
+    const newIndex = dragIds.indexOf(String(over.id));
     if (oldIndex < 0 || newIndex < 0) return;
 
     const next = arrayMove(dragIds, oldIndex, newIndex);
     setDragIds(next);
 
-    // Persist this new order immediately on drop
-    await persistOrder(next);
+    // Optimistically update in-memory games so the sort stays consistent after refresh
+    setGames((prev) => {
+      const copy = [...prev];
+      const orderMap = new Map<string, number>();
+      next.forEach((id, idx) => orderMap.set(id, idx + 1));
+
+      return copy.map((g) => {
+        const key = g.igdbId || titleKey(g.title);
+        const n = orderMap.get(key);
+        if (!n) return g;
+        if (activeTab === "queued") return { ...g, queuedOrder: String(n) };
+        if (activeTab === "wishlist") return { ...g, wishlistOrder: String(n) };
+        return g;
+      });
+    });
+
+    // Persist to sheet
+    try {
+      await persistOrderToSheet(next);
+    } catch (e) {
+      console.error(e);
+    }
   }
-
-  // Render list source for grid:
-  // If reorderEnabled, we must display in dragIds order (not filtered sort order),
-  // otherwise use filtered directly.
-  const gridGames = useMemo(() => {
-    if (!reorderEnabled) return filtered;
-
-    const idToGame = new Map<string, Game>();
-    for (const g of filtered) idToGame.set(stableId(g), g);
-
-    return dragIds.map((id) => idToGame.get(id)).filter(Boolean) as Game[];
-  }, [reorderEnabled, filtered, dragIds]);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
@@ -1176,16 +1281,8 @@ export default function HomePage() {
                 <option value="desc">Desc</option>
               </SmallSelect>
             </div>
-
-            {reorderEnabled && (
-              <div style={{ marginTop: 8, fontSize: 11, color: COLORS.muted }}>
-                Drag to reorder {activeTab === "queued" ? "Queued" : "Wishlist"}{" "}
-                {savingOrder ? "• saving…" : ""}
-              </div>
-            )}
           </div>
 
-          {/* Stats */}
           <StatsBlock
             left={[
               { value: gamesTotal, label: "Games" },
@@ -1284,7 +1381,15 @@ export default function HomePage() {
         </div>
 
         {/* Top nav + count */}
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: 16,
+            marginBottom: 14,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
             <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
@@ -1298,36 +1403,6 @@ export default function HomePage() {
 
         {loading ? (
           <div>Loading…</div>
-        ) : reorderEnabled ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-          >
-            <SortableContext items={dragIds} strategy={rectSortingStrategy}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
-                  gap: 12,
-                }}
-              >
-                {gridGames.map((g) => {
-                  const id = stableId(g);
-                  return (
-                    <SortableTile
-                      key={id}
-                      id={id}
-                      game={g}
-                      tileSize={tileSize}
-                      onClick={() => setSelectedGame(g)}
-                    />
-                  );
-                })}
-              </div>
-            </SortableContext>
-          </DndContext>
         ) : (
           <div
             style={{
@@ -1336,40 +1411,70 @@ export default function HomePage() {
               gap: 12,
             }}
           >
-            {filtered.map((g, i) => (
-              <button
-                key={`${stableId(g)}-${i}`}
-                onClick={() => setSelectedGame(g)}
-                style={{ border: "none", padding: 0, background: "transparent", cursor: "pointer", textAlign: "left" }}
-                title={g.title}
-              >
-                <div
-                  style={{
-                    aspectRatio: "2 / 3",
-                    background: COLORS.card,
-                    borderRadius: 14,
-                    overflow: "hidden",
-                    boxShadow: "0 20px 40px rgba(0,0,0,.6)",
-                  }}
+            {/* Drag & drop only on Queued/Wishlist */}
+            {isDragTab ? (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={dragIds} strategy={rectSortingStrategy}>
+                  {dragIds.map((id) => {
+                    const g = filtered.find((x) => (x.igdbId || titleKey(x.title)) === id);
+                    if (!g) return null;
+                    return (
+                      <SortableCover
+                        key={id}
+                        id={id}
+                        title={g.title}
+                        coverUrl={g.coverUrl}
+                        onClick={() => setSelectedGame(g)}
+                      />
+                    );
+                  })}
+                </SortableContext>
+              </DndContext>
+            ) : (
+              filtered.map((g, i) => (
+                <button
+                  key={`${titleKey(g.title)}-${i}`}
+                  onClick={() => setSelectedGame(g)}
+                  style={{ border: "none", padding: 0, background: "transparent", cursor: "pointer", textAlign: "left" }}
+                  title={g.title}
                 >
-                  {g.coverUrl ? (
-                    <img
-                      src={g.coverUrl}
-                      alt={g.title}
-                      loading="lazy"
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
-                      No cover
-                    </div>
-                  )}
-                </div>
-              </button>
-            ))}
+                  <div
+                    style={{
+                      aspectRatio: "2 / 3",
+                      background: COLORS.card,
+                      borderRadius: 14,
+                      overflow: "hidden",
+                      boxShadow: "0 20px 40px rgba(0,0,0,.6)",
+                    }}
+                  >
+                    {g.coverUrl ? (
+                      <img
+                        src={g.coverUrl}
+                        alt={g.title}
+                        loading="lazy"
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          height: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: COLORS.muted,
+                          fontSize: 12,
+                        }}
+                      >
+                        No cover
+                      </div>
+                    )}
+                  </div>
+                </button>
+              ))
+            )}
           </div>
         )}
       </main>
@@ -1456,8 +1561,12 @@ export default function HomePage() {
                   <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>{selectedGame.title}</div>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {selectedGame.platform.slice(0, 6).map((p) => <TagPill key={`p-${p}`} text={p} />)}
-                    {selectedGame.genres.slice(0, 6).map((g) => <TagPill key={`g-${g}`} text={g} />)}
+                    {selectedGame.platform.slice(0, 6).map((p) => (
+                      <TagPill key={`p-${p}`} text={p} />
+                    ))}
+                    {selectedGame.genres.slice(0, 6).map((g) => (
+                      <TagPill key={`g-${g}`} text={g} />
+                    ))}
                     {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
                     {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
                     {selectedGame.status ? <TagPill text={selectedGame.status} /> : null}
@@ -1515,27 +1624,13 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* little “dragging” hint (optional) */}
-      {reorderEnabled && activeDragId && (
-        <div
-          style={{
-            position: "fixed",
-            left: 18,
-            bottom: 18,
-            padding: "10px 12px",
-            borderRadius: 12,
-            background: COLORS.card,
-            border: `1px solid ${COLORS.border}`,
-            color: COLORS.muted,
-            fontSize: 12,
-            zIndex: 200,
-          }}
-        >
-          Reordering…
+            <style>{`
+              @media (max-width: 900px) {
+                .modalStack { flex-direction: column !important; }
+              }
+            `}</style>
+          </div>
         </div>
       )}
     </div>
