@@ -1,20 +1,18 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.1.3
+   Version: 2.1.2
    Notes:
-   - FIX: Sync pill stays in LEFT sidebar under avatar/title (not top-right header)
-   - FIX: Stats layout now responsive on mobile (grids collapse cleanly)
-   - NEW: Top Rated Games This Year (single row, responsive count; never wraps to 2nd row)
-   - CHANGE: Stats card label "Items in view" -> "Total Games"
-   - KEEP: Facets affect stats (stats uses the SAME filtered dataset)
-   - KEEP: Drag + drop reorder for Queued + Wishlist (Edit Mode toggle), writes to Sheets API route
-   - KEEP: Modal game detail view (cover/tags left; screenshot + fields right; 2-col info; desc/screenshot full width)
-   - KEEP: Desktop tile default = 120, mobile default = 100
+   - FIX: Sync bar lives under avatar (above search) and never truncates (no wrapping/cutoff)
+   - FIX: Sidebar stays a fixed width (doesn’t shrink)
+   - FIX: Stats mobile layout (cards/lists stack cleanly)
+   - NEW: “Top Rated Games This Year” is ALWAYS a single row; shows fewer covers as window narrows
+   - CHANGE: “Items in view” -> “Total Games”
+   - KEEP: Everything else exactly as in 2.1.0 (stats cards/bars/lists, facets affect stats, DnD, modal)
 ===================================================================================== */
 
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import {
   DndContext,
@@ -113,11 +111,7 @@ function toNumOrNaN(v: unknown) {
 
 function uniqueSorted(values: string[]) {
   return Array.from(
-    new Set(
-      values
-        .map((x) => norm(x))
-        .filter((x) => x && x !== "#REF!" && x.toLowerCase() !== "n/a")
-    )
+    new Set(values.map((x) => norm(x)).filter((x) => x && x !== "#REF!" && x.toLowerCase() !== "n/a"))
   ).sort((a, b) => a.localeCompare(b));
 }
 
@@ -199,7 +193,7 @@ function dedupeByTitle(rows: Game[]) {
     const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
 
-    // releaseDate: earliest non-empty
+    // releaseDate: earliest non-empty (keeps “true release” stable)
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
@@ -233,6 +227,7 @@ function dedupeByTitle(rows: Game[]) {
     const description = existing.description || g.description;
     const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
+    // Keep the first non-empty queued/wishlist order (if duplicates exist)
     const queuedOrder = existing.queuedOrder || g.queuedOrder;
     const wishlistOrder = existing.wishlistOrder || g.wishlistOrder;
 
@@ -516,7 +511,15 @@ function SmallSelect({
   );
 }
 
-function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function TabButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -549,7 +552,7 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
   );
 }
 
-/** Stats block – locked look */
+/** Stats block – locked look: 2 columns, tight, no uppercase, aligned labels */
 function StatsBlock({
   left,
   right,
@@ -659,14 +662,17 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   const aHas = Number.isFinite(a);
   const bHas = Number.isFinite(b);
 
+  // order numbers first (ascending)
   if (aHas && bHas) {
     if (a !== b) return a - b;
-    return toDateNum(bRel) - toDateNum(aRel); // newest release first on ties
+    // tie-breaker: newest release first
+    return toDateNum(bRel) - toDateNum(aRel);
   }
   if (aHas && !bHas) return -1;
   if (!aHas && bHas) return 1;
 
-  return toDateNum(bRel) - toDateNum(aRel); // neither has order -> newest release first
+  // neither has order -> newest release first
+  return toDateNum(bRel) - toDateNum(aRel);
 }
 
 /** DND tile */
@@ -753,15 +759,7 @@ function SortableTile({
 function StatCard({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
-      <div
-        style={{
-          color: COLORS.muted,
-          fontSize: 11,
-          fontWeight: 800,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-        }}
-      >
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
         {title}
       </div>
       <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
@@ -788,15 +786,7 @@ function TopList({
 
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
-      <div
-        style={{
-          color: COLORS.muted,
-          fontSize: 11,
-          fontWeight: 800,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-        }}
-      >
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
         {title}
       </div>
 
@@ -854,94 +844,163 @@ function TopList({
   );
 }
 
-/** Top Rated row: single row, responsive number of covers (never wraps) */
-function TopRatedRow({
-  title,
-  games,
-  max = 10,
-  min = 3,
+function SyncBar({
+  syncState,
+  syncMsg,
+  lastSyncAt,
+  onResync,
 }: {
-  title: string;
-  games: Array<{ title: string; coverUrl: string }>;
-  max?: number;
-  min?: number;
+  syncState: "idle" | "saving" | "ok" | "error";
+  syncMsg: string;
+  lastSyncAt: number | null;
+  onResync: () => void;
 }) {
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [showN, setShowN] = useState(max);
+  const dot =
+    syncState === "saving" ? COLORS.warn : syncState === "ok" ? COLORS.accent : syncState === "error" ? COLORS.danger : COLORS.muted;
 
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
+  const statusText = syncState === "saving" ? "Syncing" : syncState === "ok" ? "Synced" : syncState === "error" ? "Error" : "Idle";
 
-    const GAP = 10;
-    const CARD_W = 64; // cover tile width
-
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect?.width ?? 0;
-      const possible = Math.floor((w + GAP) / (CARD_W + GAP));
-      const clamped = Math.max(min, Math.min(max, possible || min));
-      setShowN(clamped);
-    });
-
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [max, min]);
-
-  const shown = games.slice(0, showN);
+  const timeText = (() => {
+    if (!lastSyncAt) return "—";
+    try {
+      return new Date(lastSyncAt).toLocaleString();
+    } catch {
+      return "—";
+    }
+  })();
 
   return (
+    <div
+      style={{
+        marginTop: 10,
+        marginBottom: 10,
+        borderRadius: 14,
+        border: `1px solid ${COLORS.border}`,
+        background: COLORS.card,
+        padding: 10,
+      }}
+      title={syncState === "error" ? syncMsg : lastSyncAt ? `Last sync: ${timeText}` : "Not synced yet"}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, opacity: 0.9, flex: "0 0 auto" }} />
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span style={{ color: COLORS.text, fontSize: 12, fontWeight: 900, flex: "0 0 auto" }}>{statusText}</span>
+            <span
+              style={{
+                color: COLORS.muted,
+                fontSize: 12,
+                fontWeight: 750,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                minWidth: 0,
+              }}
+            >
+              {timeText}
+            </span>
+          </div>
+
+          {syncState === "error" ? (
+            <div style={{ marginTop: 4, color: COLORS.danger, fontSize: 11, fontWeight: 750, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {syncMsg || "Sync failed"}
+            </div>
+          ) : null}
+        </div>
+
+        <button
+          onClick={onResync}
+          style={{
+            border: `1px solid ${COLORS.border}`,
+            background: "rgba(255,255,255,0.04)",
+            color: COLORS.text,
+            borderRadius: 999,
+            padding: "6px 10px",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 900,
+            flex: "0 0 auto",
+            whiteSpace: "nowrap",
+          }}
+          title="Re-sync (re-fetch CSV)"
+        >
+          Re-sync
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TopRatedRow({
+  games,
+  year,
+  onClickGame,
+}: {
+  games: Game[];
+  year: number;
+  onClickGame: (g: Game) => void;
+}) {
+  // single-row, no-wrap, overflow hidden => shows fewer covers as container narrows
+  return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
-      <div
-        style={{
-          color: COLORS.muted,
-          fontSize: 11,
-          fontWeight: 800,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          marginBottom: 10,
-        }}
-      >
-        {title}
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+        Top Rated Games This Year
       </div>
 
       <div
-        ref={wrapRef}
         style={{
+          marginTop: 10,
           display: "flex",
           flexWrap: "nowrap",
           gap: 10,
           overflow: "hidden",
-          alignItems: "center",
+          whiteSpace: "nowrap",
         }}
       >
-        {shown.length ? (
-          shown.map((g) => (
-            <div
-              key={g.title}
-              title={g.title}
+        {games.length ? (
+          games.map((g) => (
+            <button
+              key={`top-${g.igdbId || titleKey(g.title)}`}
+              onClick={() => onClickGame(g)}
               style={{
-                width: 64,
-                flex: "0 0 auto",
-                aspectRatio: "2 / 3",
-                borderRadius: 12,
-                overflow: "hidden",
                 border: `1px solid ${COLORS.border}`,
                 background: COLORS.card,
-                boxShadow: "0 14px 34px rgba(0,0,0,.5)",
+                borderRadius: 12,
+                padding: 0,
+                overflow: "hidden",
+                cursor: "pointer",
+                flex: "0 0 auto",
               }}
+              title={`${g.title} (${g.myRating || "—"})`}
             >
-              {g.coverUrl ? (
-                <img
-                  src={g.coverUrl}
-                  alt={g.title}
-                  loading="lazy"
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              ) : null}
-            </div>
+              <div style={{ width: 62, aspectRatio: "2 / 3" as any }}>
+                {g.coverUrl ? (
+                  <img
+                    src={g.coverUrl}
+                    alt={g.title}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: COLORS.muted,
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    —
+                  </div>
+                )}
+              </div>
+            </button>
           ))
         ) : (
-          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games tagged this year.</div>
+          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games tagged “{year}”.</div>
         )}
       </div>
     </div>
@@ -967,13 +1026,11 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">(
-    "games"
-  );
+  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">("games");
 
-  const [sortBy, setSortBy] = useState<
-    "title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder"
-  >("releaseDate");
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">(
+    "releaseDate"
+  );
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -984,6 +1041,7 @@ export default function HomePage() {
   const [openGenres, setOpenGenres] = useState(false);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
   // Drag/drop edit mode + syncing indicator
@@ -1003,19 +1061,23 @@ export default function HomePage() {
   // Mobile sizing
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 900px)");
+
     const apply = () => {
       const m = mq.matches;
       setIsMobile(m);
       setTileSize(m ? 100 : 120);
     };
-    apply();
 
+    apply();
     const onChange = () => apply();
+
     if (typeof mq.addEventListener === "function") {
       mq.addEventListener("change", onChange);
       return () => mq.removeEventListener("change", onChange);
     }
+    // @ts-expect-error legacy
     mq.addListener(onChange);
+    // @ts-expect-error legacy
     return () => mq.removeListener(onChange);
   }, []);
 
@@ -1044,6 +1106,7 @@ export default function HomePage() {
     }
   }
 
+  // Initial load + reload on refreshNonce
   useEffect(() => {
     fetchCsvNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1060,6 +1123,8 @@ export default function HomePage() {
     } else if (activeTab === "completed") {
       setSortBy("dateCompleted");
       setSortDir("desc");
+    } else {
+      // keep current
     }
 
     if (activeTab !== "queued" && activeTab !== "wishlist") {
@@ -1097,11 +1162,14 @@ export default function HomePage() {
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
+      // Top tabs
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
       if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
       if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
       if (activeTab === "completed" && !toBool(g.completed)) return false;
+      // Stats tab adds no extra filter
 
+      // Facets
       if (selectedStatus && g.status !== selectedStatus) return false;
       if (selectedOwnership && g.ownership !== selectedOwnership) return false;
       if (selectedFormat && g.format !== selectedFormat) return false;
@@ -1111,11 +1179,13 @@ export default function HomePage() {
         if (!set.has(selectedPlatform.toLowerCase())) return false;
       }
 
+      // Genres = AND
       if (selectedGenres.length) {
         const set = new Set(g.genres.map((x) => x.toLowerCase()));
         for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
       }
 
+      // Years Played = OR
       if (selectedYearsPlayed.length) {
         const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
         const any = selectedYearsPlayed.some((y) => set.has(y.toLowerCase()));
@@ -1128,13 +1198,19 @@ export default function HomePage() {
     const dir = sortDir === "asc" ? 1 : -1;
 
     return base.sort((a, b) => {
-      if (sortBy === "queuedOrder") return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
-      if (sortBy === "wishlistOrder") return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
+      // queued/wishlist special: order first, then newest release
+      if (sortBy === "queuedOrder") {
+        return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
+      }
+      if (sortBy === "wishlistOrder") {
+        return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
+      }
 
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
       if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
       if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
       if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
+
       return 0;
     });
   }, [
@@ -1151,6 +1227,7 @@ export default function HomePage() {
     sortDir,
   ]);
 
+  // Facet counts
   const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
   const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
   const ownershipCounts = useMemo(() => countByKey(filtered, (g) => g.ownership), [filtered]);
@@ -1158,7 +1235,7 @@ export default function HomePage() {
   const yearsPlayedCounts = useMemo(() => countByTagList(filtered, (g) => g.yearPlayed), [filtered]);
   const genreCounts = useMemo(() => countByTagList(filtered, (g) => g.genres), [filtered]);
 
-  // Sidebar stats
+  // Sidebar stats (locked layout)
   const gamesTotal = games.length;
   const year = new Date().getFullYear();
   const inYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
@@ -1172,6 +1249,7 @@ export default function HomePage() {
 
   const sidebarStyle: React.CSSProperties = {
     width: 340,
+    flex: "0 0 340px", // ✅ fixed; do not shrink
     padding: 16,
     background: COLORS.panel,
     borderRight: `1px solid ${COLORS.border}`,
@@ -1185,7 +1263,7 @@ export default function HomePage() {
 
   const topRightCount = filtered.length;
 
-  // Drag ids
+  // Drag list ids
   const dragIds = useMemo(() => {
     return filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`));
   }, [filtered]);
@@ -1201,15 +1279,6 @@ export default function HomePage() {
 
   const reorderAllowed = editMode && (activeTab === "queued" || activeTab === "wishlist");
 
-  function formatLastSync(ts: number | null) {
-    if (!ts) return "—";
-    try {
-      return new Date(ts).toLocaleString();
-    } catch {
-      return "—";
-    }
-  }
-
   async function saveOrderToSheet(nextIds: string[]) {
     const orderType = activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
     if (!orderType) return;
@@ -1218,7 +1287,9 @@ export default function HomePage() {
       .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
       .filter(Boolean);
 
-    if (!orderedIgdbIds.length) throw new Error("No IGDB_ID values found to save order.");
+    if (!orderedIgdbIds.length) {
+      throw new Error("No IGDB_ID values found to save order.");
+    }
 
     const res = await fetch("/sheets/update-order", {
       method: "POST",
@@ -1231,7 +1302,9 @@ export default function HomePage() {
     });
 
     const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json?.ok) throw new Error(json?.error || "Order save failed.");
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.error || "Order save failed.");
+    }
   }
 
   async function handleDragEnd(e: DragEndEvent) {
@@ -1245,12 +1318,11 @@ export default function HomePage() {
     if (oldIndex < 0 || newIndex < 0) return;
 
     const next = arrayMove(dragIds, oldIndex, newIndex);
+
     const orderType = activeTab === "queued" ? "queued" : "wishlist";
+    const nextIgdbIds = next.map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : "")).filter(Boolean);
 
-    const nextIgdbIds = next
-      .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
-      .filter(Boolean);
-
+    // Optimistic UI update
     setGames((prev) => {
       const rank = new Map<string, number>();
       nextIgdbIds.forEach((igdbId, idx) => rank.set(igdbId, idx + 1));
@@ -1258,7 +1330,9 @@ export default function HomePage() {
       return prev.map((g) => {
         const r = g.igdbId ? rank.get(g.igdbId) : undefined;
         if (!r) return g;
-        return orderType === "queued" ? { ...g, queuedOrder: String(r) } : { ...g, wishlistOrder: String(r) };
+
+        if (orderType === "queued") return { ...g, queuedOrder: String(r) };
+        return { ...g, wishlistOrder: String(r) };
       });
     });
 
@@ -1314,9 +1388,7 @@ export default function HomePage() {
       .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))
       .find((g) => Boolean(toDateNum(g.releaseDate)));
 
-    const ratings = filtered
-      .map((g) => Number(norm(g.igdbRating)))
-      .filter((n) => Number.isFinite(n));
+    const ratings = filtered.map((g) => Number(norm(g.igdbRating))).filter((n) => Number.isFinite(n));
     const avgIgdb = ratings.length ? Math.round((ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10) / 10 : null;
 
     return {
@@ -1337,106 +1409,38 @@ export default function HomePage() {
     };
   }, [filtered]);
 
-  // Top Rated games (THIS YEAR) based on filtered slice
   const topRatedThisYear = useMemo(() => {
-    const y = String(new Date().getFullYear());
-
+    const y = String(year);
     return filtered
-      .filter((g) => g.yearPlayed?.includes(y))
-      .map((g) => ({ g, r: toNumOrNaN(g.myRating) }))
-      .filter((x) => Number.isFinite(x.r) && x.g.coverUrl)
-      .sort((a, b) => (b.r as number) - (a.r as number) || a.g.title.localeCompare(b.g.title))
-      .map((x) => ({ title: x.g.title, coverUrl: x.g.coverUrl }));
-  }, [filtered]);
-
-  const sidebarSyncPill = (
-    <div
-      style={{
-        marginTop: 10,
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        padding: 10,
-        borderRadius: 14,
-        background: COLORS.card,
-        border: `1px solid ${COLORS.border}`,
-      }}
-      title={
-        syncState === "saving"
-          ? "Saving / syncing…"
-          : syncState === "ok"
-          ? `Last sync: ${formatLastSync(lastSyncAt)}`
-          : syncState === "error"
-          ? `Error: ${syncMsg}`
-          : `Last sync: ${formatLastSync(lastSyncAt)}`
-      }
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 999,
-              background:
-                syncState === "saving"
-                  ? COLORS.warn
-                  : syncState === "ok"
-                  ? COLORS.accent
-                  : syncState === "error"
-                  ? COLORS.danger
-                  : COLORS.muted,
-              opacity: 0.9,
-              flex: "0 0 auto",
-            }}
-          />
-          <div style={{ fontSize: 12, fontWeight: 900, color: COLORS.text, whiteSpace: "nowrap" }}>
-            {syncState === "saving" ? "Syncing" : syncState === "ok" ? "Synced" : syncState === "error" ? "Error" : "Idle"}
-          </div>
-        </div>
-
-        <button
-          onClick={() => setRefreshNonce((n) => n + 1)}
-          style={{
-            border: `1px solid ${COLORS.border}`,
-            background: "rgba(255,255,255,0.04)",
-            color: COLORS.text,
-            borderRadius: 12,
-            padding: "6px 10px",
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 900,
-            whiteSpace: "nowrap",
-            flex: "0 0 auto",
-          }}
-          title="Re-sync (re-fetch CSV)"
-        >
-          Re-sync
-        </button>
-      </div>
-
-      <div
-        style={{
-          color: COLORS.muted,
-          fontSize: 12,
-          fontWeight: 750,
-          lineHeight: 1.2,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {lastSyncAt ? formatLastSync(lastSyncAt) : "—"}
-      </div>
-    </div>
-  );
+      .filter((g) => g.yearPlayed.includes(y))
+      .map((g) => ({ g, r: Number(norm(g.myRating)) }))
+      .filter((x) => Number.isFinite(x.r))
+      .sort((a, b) => b.r - a.r || a.g.title.localeCompare(b.g.title))
+      .slice(0, 16)
+      .map((x) => x.g);
+  }, [filtered, year]);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
       <style>{`
         aside::-webkit-scrollbar { display: none; }
 
-        /* Mobile sidebar */
+        /* Stats layout responsiveness */
+        .statsGrid4 { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:12px; }
+        .statsGrid3 { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px; }
+        .statsGrid2 { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px; }
+
+        @media (max-width: 1100px) {
+          .statsGrid4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+          .statsGrid3 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+        }
+
+        @media (max-width: 650px) {
+          .statsGrid4 { grid-template-columns: 1fr; }
+          .statsGrid3 { grid-template-columns: 1fr; }
+          .statsGrid2 { grid-template-columns: 1fr; }
+        }
+
         @media (max-width: 900px) {
           .sidebar {
             position: fixed !important;
@@ -1447,16 +1451,11 @@ export default function HomePage() {
             transform: translateX(-110%);
             transition: transform 160ms ease;
             border-right: 1px solid ${COLORS.border};
+            width: 340px !important;
+            flex: 0 0 340px !important;
           }
           .sidebar.open { transform: translateX(0); }
-
-          .overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.55);
-            z-index: 40;
-          }
-
+          .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 40; }
           .mobileTopbar {
             position: sticky;
             top: 0;
@@ -1466,16 +1465,9 @@ export default function HomePage() {
             border-bottom: 1px solid ${COLORS.border};
             margin: -18px -18px 14px -18px;
           }
-
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
-
-          /* Stats responsiveness */
-          .statsGrid4 { grid-template-columns: 1fr 1fr !important; }
-          .statsGrid3 { grid-template-columns: 1fr !important; }
-          .statsGrid2 { grid-template-columns: 1fr !important; }
         }
-
         .mobileOnly { display: none; }
       `}</style>
 
@@ -1527,8 +1519,13 @@ export default function HomePage() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Chris&apos; Game Library</div>
           </div>
 
-          {/* ✅ Sync pill lives HERE now (locked) */}
-          {sidebarSyncPill}
+          {/* ✅ Sync bar UNDER avatar, ABOVE search */}
+          <SyncBar
+            syncState={syncState}
+            syncMsg={syncMsg}
+            lastSyncAt={lastSyncAt}
+            onResync={() => setRefreshNonce((n) => n + 1)}
+          />
 
           <input
             value={q}
@@ -1536,7 +1533,6 @@ export default function HomePage() {
             placeholder="Search…"
             style={{
               width: "100%",
-              marginTop: 10,
               padding: "9px 10px",
               borderRadius: 12,
               border: `1px solid ${COLORS.border}`,
@@ -1548,6 +1544,7 @@ export default function HomePage() {
 
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>SORT</div>
+
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
               <SmallSelect value={sortBy} onChange={(v) => setSortBy(v as any)}>
                 <option value="title">Title</option>
@@ -1565,7 +1562,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ✅ Locked sidebar stats */}
           <StatsBlock
             left={[
               { value: gamesTotal, label: "Games" },
@@ -1663,7 +1659,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Top nav + right area (count only + edit mode) */}
+        {/* Top nav + right area */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
@@ -1694,6 +1690,7 @@ export default function HomePage() {
               </button>
             )}
 
+            {/* Count only (sync is in sidebar now) */}
             <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>{topRightCount}</div>
           </div>
         </div>
@@ -1702,15 +1699,16 @@ export default function HomePage() {
         {loading ? (
           <div>Loading…</div>
         ) : activeTab === "stats" ? (
+          // ===== STATS MODE =====
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div className="statsGrid4" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+            <div className="statsGrid4">
               <StatCard title="Total Games" value={statsData.total} subtitle="Respects facets + search" />
               <StatCard title="Completed" value={statsData.completedInView} />
               <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
               <StatCard title="Queued" value={statsData.queuedInView} />
             </div>
 
-            <div className="statsGrid3" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+            <div className="statsGrid3">
               <StatCard title="Wishlist" value={statsData.wishlistInView} />
               <StatCard
                 title="Avg IGDB rating"
@@ -1720,15 +1718,15 @@ export default function HomePage() {
               <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
             </div>
 
-            {/* ✅ Top Rated row (single line, responsive count, never wraps) */}
-            <TopRatedRow title="Top Rated Games This Year" games={topRatedThisYear} max={10} min={3} />
+            {/* ✅ Top rated row (single line, auto shows fewer as window narrows) */}
+            <TopRatedRow games={topRatedThisYear} year={year} onClickGame={(g) => setSelectedGame(g)} />
 
-            <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <div className="statsGrid2">
               <TopList title="Top Platforms" items={statsData.byPlatform} />
               <TopList title="Top Genres" items={statsData.byGenre} />
             </div>
 
-            <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <div className="statsGrid2">
               <TopList title="Status Breakdown" items={statsData.byStatus} />
               <TopList title="Ownership Breakdown" items={statsData.byOwnership} />
             </div>
@@ -1740,6 +1738,7 @@ export default function HomePage() {
             </div>
           </div>
         ) : (
+          // ===== COVERS MODE (with optional drag/drop) =====
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={dragIds} strategy={rectSortingStrategy}>
               <div
@@ -1852,8 +1851,12 @@ export default function HomePage() {
                   <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>{selectedGame.title}</div>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {selectedGame.platform.slice(0, 6).map((p) => <TagPill key={`p-${p}`} text={p} />)}
-                    {selectedGame.genres.slice(0, 6).map((g) => <TagPill key={`g-${g}`} text={g} />)}
+                    {selectedGame.platform.slice(0, 6).map((p) => (
+                      <TagPill key={`p-${p}`} text={p} />
+                    ))}
+                    {selectedGame.genres.slice(0, 6).map((g) => (
+                      <TagPill key={`g-${g}`} text={g} />
+                    ))}
                     {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
                     {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
                     {selectedGame.status ? <TagPill text={selectedGame.status} /> : null}
@@ -1886,10 +1889,13 @@ export default function HomePage() {
                 <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Field label="Release Date" value={selectedGame.releaseDate} />
                   <Field label="Year Played" value={selectedGame.yearPlayed.join(", ")} />
+
                   <Field label="IGDB Rating" value={selectedGame.igdbRating} />
                   <Field label="My Rating" value={selectedGame.myRating} />
+
                   <Field label="Hours Played" value={selectedGame.hoursPlayed} />
                   <Field label="Developer" value={selectedGame.developer} />
+
                   <Field label="Date Added" value={selectedGame.dateAdded} />
                   <Field label="Date Completed" value={selectedGame.dateCompleted} />
                 </div>
