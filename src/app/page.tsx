@@ -1,20 +1,37 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 1.7.1
+   Version: 2.0.0
    Notes:
-   - Add: QueuedOrder + WishlistOrder sorting logic (tab-default)
-   - Queued tab default: QueuedOrder asc, then ReleaseDate desc
-   - Wishlist tab default: WishlistOrder asc, then ReleaseDate desc
+   - Add: Queued/Wishlist manual reorder via drag + drop (persists to Google Sheet)
+   - Add: Default sort for Queued/Wishlist = Order asc, then ReleaseDate desc (newest first)
    - Keep: Desktop tile default = 120, mobile default = 100
    - Keep: 5 top tabs + top-right count
    - Keep: Plus icons on facet headers
-   - Keep: Game detail modal layout (cover/tags left; screenshot+info right; 2-col info; Description full width)
+   - Keep: Game detail modal layout (cover/tags left; screenshot+info right; info 2-col;
+           Description full width; Completed only via Completed=true)
 ===================================================================================== */
 
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
+
+import {
+  DndContext,
+  DragEndEvent,
+  DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  rectSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type Row = Record<string, string>;
 
@@ -46,8 +63,8 @@ type Game = {
   description: string;
   screenshotUrl: string;
 
-  queuedOrder: string;   // <- NEW
-  wishlistOrder: string; // <- NEW
+  queuedOrder: number;   // NEW
+  wishlistOrder: number; // NEW
 };
 
 const COLORS = {
@@ -91,11 +108,9 @@ function toDateNum(s: string) {
   return Number.isFinite(t) ? t : 0;
 }
 
-function toOrderNum(s: string) {
-  const v = norm(s);
-  if (!v) return Number.POSITIVE_INFINITY;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+function toNum(v: string) {
+  const n = parseInt(norm(v), 10);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function uniqueSorted(values: string[]) {
@@ -130,13 +145,17 @@ function rowToGame(row: Row): Game | null {
   const title = norm(row["Title"]);
   if (!title) return null;
 
+  const platform = splitTags(row["Platforms"] || row["Platform"]);
+  const genres = splitTags(row["Genres"]);
+  const yearPlayed = splitTags(row["YearPlayed"]);
+
   return {
     title,
     coverUrl: pickCover(row),
 
-    platform: splitTags(row["Platforms"] || row["Platform"]),
+    platform,
     status: norm(row["Status"]),
-    genres: splitTags(row["Genres"]),
+    genres,
     ownership: norm(row["Ownership"]),
     format: norm(row["Format"]),
 
@@ -146,7 +165,7 @@ function rowToGame(row: Row): Game | null {
     backlog: norm(row["Backlog"]),
     completed: norm(row["Completed"]),
     dateCompleted: norm(row["DateCompleted"]),
-    yearPlayed: splitTags(row["YearPlayed"]),
+    yearPlayed,
 
     igdbId: norm(row["IGDB_ID"]),
     igdbRating: norm(row["IGDB_Rating"]),
@@ -157,8 +176,8 @@ function rowToGame(row: Row): Game | null {
     description: norm(row["Description"]),
     screenshotUrl: pickScreenshot(row),
 
-    queuedOrder: norm(row["QueuedOrder"]),     // <- NEW (matches your header)
-    wishlistOrder: norm(row["WishlistOrder"]), // <- NEW (matches your header)
+    queuedOrder: toNum(row["QueuedOrder"]),
+    wishlistOrder: toNum(row["WishlistOrder"]),
   };
 }
 
@@ -183,21 +202,18 @@ function dedupeByTitle(rows: Game[]) {
     const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
 
-    // releaseDate: earliest non-empty
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
     if (!aRel && bRel) releaseDate = g.releaseDate;
     else if (aRel && bRel) releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
-    // dateAdded: earliest non-empty
     const aAdded = toDateNum(existing.dateAdded);
     const bAdded = toDateNum(g.dateAdded);
     let dateAdded = existing.dateAdded;
     if (!aAdded && bAdded) dateAdded = g.dateAdded;
     else if (aAdded && bAdded) dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
 
-    // dateCompleted: latest non-empty
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
@@ -217,7 +233,6 @@ function dedupeByTitle(rows: Game[]) {
     const description = existing.description || g.description;
     const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
-    // keep the FIRST non-empty order (so your sheet wins)
     const queuedOrder = existing.queuedOrder || g.queuedOrder;
     const wishlistOrder = existing.wishlistOrder || g.wishlistOrder;
 
@@ -542,6 +557,7 @@ function TabButton({
   );
 }
 
+/** Stats block – locked look */
 function StatsBlock({
   left,
   right,
@@ -602,6 +618,7 @@ function StatsBlock({
   );
 }
 
+/** Modal bits */
 function TagPill({ text }: { text: string }) {
   return (
     <span
@@ -642,6 +659,82 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/** DND tile */
+function SortableTile({
+  id,
+  game,
+  onClick,
+  tileSize,
+}: {
+  id: string;
+  game: Game;
+  onClick: () => void;
+  tileSize: number;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.7 : 1,
+    cursor: "grab",
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <button
+        onClick={onClick}
+        style={{
+          border: "none",
+          padding: 0,
+          background: "transparent",
+          cursor: "pointer",
+          textAlign: "left",
+          width: "100%",
+        }}
+        title={game.title}
+      >
+        <div
+          style={{
+            aspectRatio: "2 / 3",
+            background: COLORS.card,
+            borderRadius: 14,
+            overflow: "hidden",
+            boxShadow: "0 20px 40px rgba(0,0,0,.6)",
+            outline: isDragging ? `2px solid ${COLORS.accent}` : "none",
+          }}
+        >
+          {game.coverUrl ? (
+            <img
+              src={game.coverUrl}
+              alt={game.title}
+              loading="lazy"
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: COLORS.muted,
+                fontSize: 12,
+              }}
+            >
+              No cover
+            </div>
+          )}
+        </div>
+      </button>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const csvUrl = process.env.NEXT_PUBLIC_SHEET_CSV_URL;
 
@@ -663,9 +756,7 @@ export default function HomePage() {
 
   const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed">("games");
 
-  const [sortBy, setSortBy] = useState<
-    "title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder"
-  >("releaseDate");
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -678,7 +769,15 @@ export default function HomePage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
-  // Responsive tile defaults
+  // DND state
+  const [dragIds, setDragIds] = useState<string[]>([]);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 900px)");
 
@@ -696,27 +795,10 @@ export default function HomePage() {
       mq.addEventListener("change", onChange);
       return () => mq.removeEventListener("change", onChange);
     }
-    // legacy Safari
     mq.addListener(onChange);
     return () => mq.removeListener(onChange);
   }, []);
 
-  // Tab-default sorting behavior
-  useEffect(() => {
-    if (activeTab === "queued") {
-      setSortBy("queuedOrder");
-      setSortDir("asc");
-    } else if (activeTab === "wishlist") {
-      setSortBy("wishlistOrder");
-      setSortDir("asc");
-    } else {
-      // keep your prior default feel
-      setSortBy("releaseDate");
-      setSortDir("desc");
-    }
-  }, [activeTab]);
-
-  // Load CSV
   useEffect(() => {
     async function load() {
       if (!csvUrl) return;
@@ -758,6 +840,22 @@ export default function HomePage() {
     setSelectedFormat("");
   }
 
+  // Enforce default sorting when switching tabs for Queued/Wishlist
+  useEffect(() => {
+    if (activeTab === "queued") {
+      setSortBy("queuedOrder");
+      setSortDir("asc");
+    } else if (activeTab === "wishlist") {
+      setSortBy("wishlistOrder");
+      setSortDir("asc");
+    }
+  }, [activeTab]);
+
+  function stableId(g: Game) {
+    // must be stable + unique for dnd
+    return g.igdbId ? `igdb:${g.igdbId}` : `title:${titleKey(g.title)}`;
+  }
+
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
 
@@ -796,52 +894,35 @@ export default function HomePage() {
       return true;
     });
 
+    // Special sorting: queuedOrder / wishlistOrder = numeric asc, then ReleaseDate newest first
+    if (sortBy === "queuedOrder" || sortBy === "wishlistOrder") {
+      const getOrder = (g: Game) => (sortBy === "queuedOrder" ? g.queuedOrder : g.wishlistOrder);
+
+      return base.sort((a, b) => {
+        const ao = getOrder(a);
+        const bo = getOrder(b);
+
+        const aHas = ao > 0;
+        const bHas = bo > 0;
+
+        if (aHas && bHas) return ao - bo;
+        if (aHas && !bHas) return -1;
+        if (!aHas && bHas) return 1;
+
+        // both missing -> newest release date first
+        return toDateNum(b.releaseDate) - toDateNum(a.releaseDate);
+      });
+    }
+
     const dir = sortDir === "asc" ? 1 : -1;
 
-    // Special: tab-default order sorts should also fallback to releaseDate desc
-    const releaseDesc = (a: Game, b: Game) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate);
-
-    const sorted = [...base].sort((a, b) => {
-      if (sortBy === "queuedOrder") {
-        const ao = toOrderNum(a.queuedOrder);
-        const bo = toOrderNum(b.queuedOrder);
-        if (ao !== bo) return (ao - bo) * dir; // asc by default
-        const r = releaseDesc(a, b);
-        if (r !== 0) return r;
-        return a.title.localeCompare(b.title);
-      }
-
-      if (sortBy === "wishlistOrder") {
-        const ao = toOrderNum(a.wishlistOrder);
-        const bo = toOrderNum(b.wishlistOrder);
-        if (ao !== bo) return (ao - bo) * dir; // asc by default
-        const r = releaseDesc(a, b);
-        if (r !== 0) return r;
-        return a.title.localeCompare(b.title);
-      }
-
+    return base.sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-
-      if (sortBy === "releaseDate") {
-        return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      }
-
-      if (sortBy === "dateCompleted") {
-        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
-      }
-
-      if (sortBy === "dateAdded") {
-        return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
-      }
-
+      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
       return 0;
     });
-
-    // Extra: even if someone changes sort, keep sensible fallback for queued/wishlist tabs
-    if (activeTab === "queued" && sortBy !== "queuedOrder") return sorted;
-    if (activeTab === "wishlist" && sortBy !== "wishlistOrder") return sorted;
-
-    return sorted;
   }, [
     games,
     q,
@@ -856,7 +937,17 @@ export default function HomePage() {
     sortDir,
   ]);
 
-  // Facet counts (simple)
+  // Keep DND ids in sync for the reorderable tabs
+  const reorderEnabled = activeTab === "queued" || activeTab === "wishlist";
+  useEffect(() => {
+    if (!reorderEnabled) {
+      setDragIds([]);
+      return;
+    }
+    setDragIds(filtered.map(stableId));
+  }, [reorderEnabled, filtered]);
+
+  // Facet counts
   const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
   const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
   const ownershipCounts = useMemo(() => countByKey(filtered, (g) => g.ownership), [filtered]);
@@ -890,6 +981,80 @@ export default function HomePage() {
   };
 
   const topRightCount = filtered.length;
+
+  // Persist order to sheet
+  async function persistOrder(nextIds: string[]) {
+    const orderColumn = activeTab === "queued" ? "QueuedOrder" : "WishlistOrder";
+
+    // map ids -> game
+    const idToGame = new Map<string, Game>();
+    for (const g of filtered) idToGame.set(stableId(g), g);
+
+    const items = nextIds
+      .map((id, idx) => {
+        const g = idToGame.get(id);
+        if (!g?.igdbId) return null;
+        return { igdbId: g.igdbId, order: idx + 1 };
+      })
+      .filter(Boolean) as { igdbId: string; order: number }[];
+
+    if (!items.length) return;
+
+    setSavingOrder(true);
+    try {
+      const res = await fetch("/sheets/update-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderColumn, items }),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        console.error("Order save failed:", t);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingOrder(false);
+    }
+  }
+
+  function onDragStart(e: DragStartEvent) {
+    setActiveDragId(String(e.active.id));
+  }
+
+  async function onDragEnd(e: DragEndEvent) {
+    setActiveDragId(null);
+    if (!reorderEnabled) return;
+
+    const { active, over } = e;
+    if (!over) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
+
+    const oldIndex = dragIds.indexOf(activeId);
+    const newIndex = dragIds.indexOf(overId);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const next = arrayMove(dragIds, oldIndex, newIndex);
+    setDragIds(next);
+
+    // Persist this new order immediately on drop
+    await persistOrder(next);
+  }
+
+  // Render list source for grid:
+  // If reorderEnabled, we must display in dragIds order (not filtered sort order),
+  // otherwise use filtered directly.
+  const gridGames = useMemo(() => {
+    if (!reorderEnabled) return filtered;
+
+    const idToGame = new Map<string, Game>();
+    for (const g of filtered) idToGame.set(stableId(g), g);
+
+    return dragIds.map((id) => idToGame.get(id)).filter(Boolean) as Game[];
+  }, [reorderEnabled, filtered, dragIds]);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
@@ -1011,8 +1176,16 @@ export default function HomePage() {
                 <option value="desc">Desc</option>
               </SmallSelect>
             </div>
+
+            {reorderEnabled && (
+              <div style={{ marginTop: 8, fontSize: 11, color: COLORS.muted }}>
+                Drag to reorder {activeTab === "queued" ? "Queued" : "Wishlist"}{" "}
+                {savingOrder ? "• saving…" : ""}
+              </div>
+            )}
           </div>
 
+          {/* Stats */}
           <StatsBlock
             left={[
               { value: gamesTotal, label: "Games" },
@@ -1049,12 +1222,7 @@ export default function HomePage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle
-            options={ownerships}
-            counts={ownershipCounts}
-            selected={selectedOwnership}
-            onSelect={setSelectedOwnership}
-          />
+          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
@@ -1130,11 +1298,47 @@ export default function HomePage() {
 
         {loading ? (
           <div>Loading…</div>
+        ) : reorderEnabled ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+          >
+            <SortableContext items={dragIds} strategy={rectSortingStrategy}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
+                  gap: 12,
+                }}
+              >
+                {gridGames.map((g) => {
+                  const id = stableId(g);
+                  return (
+                    <SortableTile
+                      key={id}
+                      id={id}
+                      game={g}
+                      tileSize={tileSize}
+                      onClick={() => setSelectedGame(g)}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`, gap: 12 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
+              gap: 12,
+            }}
+          >
             {filtered.map((g, i) => (
               <button
-                key={`${titleKey(g.title)}-${i}`}
+                key={`${stableId(g)}-${i}`}
                 onClick={() => setSelectedGame(g)}
                 style={{ border: "none", padding: 0, background: "transparent", cursor: "pointer", textAlign: "left" }}
                 title={g.title}
@@ -1236,7 +1440,11 @@ export default function HomePage() {
                   }}
                 >
                   {selectedGame.coverUrl ? (
-                    <img src={selectedGame.coverUrl} alt={selectedGame.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    <img
+                      src={selectedGame.coverUrl}
+                      alt={selectedGame.title}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
                   ) : (
                     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
                       No cover
@@ -1297,19 +1505,37 @@ export default function HomePage() {
                   <Field
                     label="Description"
                     value={
-                      selectedGame.description ? <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div> : ""
+                      selectedGame.description ? (
+                        <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div>
+                      ) : (
+                        ""
+                      )
                     }
                   />
                 </div>
               </div>
             </div>
-
-            <style>{`
-              @media (max-width: 900px) {
-                .modalStack { flex-direction: column !important; }
-              }
-            `}</style>
           </div>
+        </div>
+      )}
+
+      {/* little “dragging” hint (optional) */}
+      {reorderEnabled && activeDragId && (
+        <div
+          style={{
+            position: "fixed",
+            left: 18,
+            bottom: 18,
+            padding: "10px 12px",
+            borderRadius: 12,
+            background: COLORS.card,
+            border: `1px solid ${COLORS.border}`,
+            color: COLORS.muted,
+            fontSize: 12,
+            zIndex: 200,
+          }}
+        >
+          Reordering…
         </div>
       )}
     </div>
