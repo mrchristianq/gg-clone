@@ -1,11 +1,13 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.1.2
+   Version: 2.1.3
    Notes:
-   - UPDATE: Sync status UI moved under avatar/title (above search) + reworked so it never wraps/cuts off
-   - UPDATE: Stats view: rename “Items in view” -> “Total Games”
-   - NEW: Stats view: “Top Rated Games This Year” (single-row only; shows more covers as window widens; never wraps)
-   - KEEP: Everything else exactly as 2.1.0
+   - KEEP: Sync UI (locked in)
+   - FIX: Stats “Top Rated Games This Year” = single row, never wraps; shows as many covers as fit
+          (smaller window = fewer visible covers; no 2nd row)
+   - FIX: Stats page mobile layout (cards + lists stack nicely)
+   - TWEAK: “Items in view” -> “Total Games”
+   - KEEP: Everything else exactly as in 2.1.0
 ===================================================================================== */
 
 "use client";
@@ -195,7 +197,7 @@ function dedupeByTitle(rows: Game[]) {
     const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
 
-    // releaseDate: earliest non-empty
+    // releaseDate: earliest non-empty (keeps “true release” stable)
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
@@ -229,6 +231,7 @@ function dedupeByTitle(rows: Game[]) {
     const description = existing.description || g.description;
     const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
+    // Keep the first non-empty queued/wishlist order (if duplicates exist)
     const queuedOrder = existing.queuedOrder || g.queuedOrder;
     const wishlistOrder = existing.wishlistOrder || g.wishlistOrder;
 
@@ -512,7 +515,15 @@ function SmallSelect({
   );
 }
 
-function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function TabButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -546,7 +557,13 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
 }
 
 /** Stats block – locked look: 2 columns, tight, no uppercase, aligned labels */
-function StatsBlock({ left, right }: { left: { value: number; label: string }[]; right: { value: number; label: string }[] }) {
+function StatsBlock({
+  left,
+  right,
+}: {
+  left: { value: number; label: string }[];
+  right: { value: number; label: string }[];
+}) {
   const labelStyle: React.CSSProperties = {
     color: COLORS.muted,
     fontSize: 12,
@@ -649,14 +666,17 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   const aHas = Number.isFinite(a);
   const bHas = Number.isFinite(b);
 
+  // order numbers first (ascending)
   if (aHas && bHas) {
     if (a !== b) return a - b;
-    return toDateNum(bRel) - toDateNum(aRel); // newest release first
+    // tie-breaker: newest release first
+    return toDateNum(bRel) - toDateNum(aRel);
   }
   if (aHas && !bHas) return -1;
   if (!aHas && bHas) return 1;
 
-  return toDateNum(bRel) - toDateNum(aRel); // neither has order -> newest release first
+  // neither has order -> newest release first
+  return toDateNum(bRel) - toDateNum(aRel);
 }
 
 /** DND tile */
@@ -670,7 +690,6 @@ function SortableTile({
   id: string;
   title: string;
   coverUrl: string;
-  tileSize: number;
   disabled: boolean;
   onClick: () => void;
 }) {
@@ -734,17 +753,34 @@ function SortableTile({
 /** Stats mode components */
 function StatCard({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {
   return (
-    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
+    <div
+      style={{
+        background: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 16,
+        padding: 14,
+      }}
+    >
       <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
         {title}
       </div>
-      <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>{value}</div>
+      <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
+        {value}
+      </div>
       {subtitle ? <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>{subtitle}</div> : null}
     </div>
   );
 }
 
-function TopList({ title, items, max = 12 }: { title: string; items: Array<{ label: string; count: number }>; max?: number }) {
+function TopList({
+  title,
+  items,
+  max = 12,
+}: {
+  title: string;
+  items: Array<{ label: string; count: number }>;
+  max?: number;
+}) {
   const shown = items.slice(0, max);
   const top = shown[0]?.count || 0;
 
@@ -777,7 +813,9 @@ function TopList({ title, items, max = 12 }: { title: string; items: Array<{ lab
                   <div style={{ height: "100%", width: `${Math.round(pct * 100)}%`, background: COLORS.statNumber, opacity: 0.55 }} />
                 </div>
 
-                <div style={{ width: 34, textAlign: "right", color: COLORS.muted, fontSize: 12, fontWeight: 750 }}>{x.count}</div>
+                <div style={{ width: 34, textAlign: "right", color: COLORS.muted, fontSize: 12, fontWeight: 750 }}>
+                  {x.count}
+                </div>
               </div>
             );
           })
@@ -789,134 +827,52 @@ function TopList({ title, items, max = 12 }: { title: string; items: Array<{ lab
   );
 }
 
-/** NEW: Sidebar sync card (reworked so it never wraps/cuts off) */
-function SyncCard({
-  syncState,
-  syncMsg,
-  lastSyncAt,
-  onResync,
-}: {
-  syncState: "idle" | "saving" | "ok" | "error";
-  syncMsg: string;
-  lastSyncAt: number | null;
-  onResync: () => void;
-}) {
-  const dot =
-    syncState === "saving" ? COLORS.warn : syncState === "ok" ? COLORS.accent : syncState === "error" ? COLORS.danger : COLORS.muted;
-
-  const statusText = syncState === "saving" ? "Syncing" : syncState === "ok" ? "Synced" : syncState === "error" ? "Error" : "Idle";
-
-  const timeText = (() => {
-    if (!lastSyncAt) return "—";
-    try {
-      // shorter but still readable; avoids cut-off in the sidebar
-      return new Date(lastSyncAt).toLocaleString(undefined, {
-        month: "numeric",
-        day: "numeric",
-        year: "2-digit",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    } catch {
-      return "—";
-    }
-  })();
-
-  return (
-    <div
-      style={{
-        marginTop: 10,
-        background: COLORS.card,
-        border: `1px solid ${COLORS.border}`,
-        borderRadius: 14,
-        padding: 10,
-      }}
-      title={syncState === "error" ? syncMsg : lastSyncAt ? `Last sync: ${timeText}` : "Not synced yet"}
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, opacity: 0.9, flex: "0 0 auto" }} />
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 0, gap: 2 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
-              <span style={{ color: COLORS.text, fontSize: 12, fontWeight: 900, whiteSpace: "nowrap" }}>{statusText}</span>
-              {syncState === "error" ? (
-                <span style={{ color: COLORS.danger, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {syncMsg || "Save failed"}
-                </span>
-              ) : null}
-            </div>
-
-            <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 750, whiteSpace: "nowrap" }}>
-              Last: {timeText}
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={onResync}
-          style={{
-            border: `1px solid ${COLORS.border}`,
-            background: "rgba(255,255,255,0.04)",
-            color: COLORS.text,
-            borderRadius: 999,
-            padding: "6px 10px",
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 900,
-            whiteSpace: "nowrap",
-            flex: "0 0 auto",
-          }}
-          title="Re-sync (re-fetch CSV)"
-        >
-          Re-sync
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** NEW: Top Rated row (single line only; shows more as container widens; never wraps) */
 function TopRatedRow({
+  title,
   games,
-  onPick,
 }: {
-  games: Game[];
-  onPick: (g: Game) => void;
+  title: string;
+  games: Array<{ title: string; coverUrl: string }>;
 }) {
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
       <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-        Top Rated Games This Year
+        {title}
       </div>
 
+      {/* Single row, never wraps; shows as many as fit (rest are clipped) */}
       <div
+        className="topRatedRow"
         style={{
           marginTop: 10,
           display: "flex",
           flexWrap: "nowrap",
           gap: 10,
-          overflow: "hidden", // never a 2nd row
+          overflow: "hidden",
+          alignItems: "flex-start",
         }}
       >
         {games.length ? (
-          games.map((g) => (
-            <button
-              key={g.igdbId || titleKey(g.title)}
-              onClick={() => onPick(g)}
+          games.map((g, i) => (
+            <div
+              key={`${g.title}-${i}`}
+              title={g.title}
               style={{
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.card,
-                borderRadius: 12,
-                padding: 0,
-                overflow: "hidden",
-                cursor: "pointer",
                 flex: "0 0 auto",
-                width: 72,
-                boxShadow: "0 14px 30px rgba(0,0,0,.45)",
+                width: 74,
               }}
-              title={`${g.title}${g.myRating ? ` — My Rating: ${g.myRating}` : ""}`}
             >
-              <div style={{ width: "100%", aspectRatio: "2 / 3", background: COLORS.card }}>
+              <div
+                style={{
+                  width: "100%",
+                  aspectRatio: "2 / 3",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.card,
+                  boxShadow: "0 14px 34px rgba(0,0,0,.55)",
+                }}
+              >
                 {g.coverUrl ? (
                   <img src={g.coverUrl} alt={g.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                 ) : (
@@ -925,11 +881,25 @@ function TopRatedRow({
                   </div>
                 )}
               </div>
-            </button>
+            </div>
           ))
         ) : (
-          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games tagged with this year in view.</div>
+          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games found for this year.</div>
         )}
+
+        {/* subtle right fade so clipping feels intentional */}
+        <div
+          aria-hidden
+          style={{
+            position: "sticky",
+            right: 0,
+            marginLeft: "auto",
+            width: 46,
+            height: 112,
+            pointerEvents: "none",
+            background: `linear-gradient(90deg, rgba(0,0,0,0), ${COLORS.panel})`,
+          }}
+        />
       </div>
     </div>
   );
@@ -956,9 +926,7 @@ export default function HomePage() {
 
   const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">(
-    "releaseDate"
-  );
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -1049,8 +1017,11 @@ export default function HomePage() {
     } else if (activeTab === "completed") {
       setSortBy("dateCompleted");
       setSortDir("desc");
+    } else {
+      // Keep current sort for other tabs; do nothing.
     }
 
+    // Edit mode only makes sense on queued/wishlist
     if (activeTab !== "queued" && activeTab !== "wishlist") {
       setEditMode(false);
     }
@@ -1119,11 +1090,17 @@ export default function HomePage() {
       return true;
     });
 
+    // Sorting
     const dir = sortDir === "asc" ? 1 : -1;
 
     return base.sort((a, b) => {
-      if (sortBy === "queuedOrder") return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
-      if (sortBy === "wishlistOrder") return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
+      // queued/wishlist special: order first, then newest release
+      if (sortBy === "queuedOrder") {
+        return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
+      }
+      if (sortBy === "wishlistOrder") {
+        return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
+      }
 
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
       if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
@@ -1146,7 +1123,7 @@ export default function HomePage() {
     sortDir,
   ]);
 
-  // Facet counts (counts in view)
+  // Facet counts (respect current filtered result set for a simple “counts in view” model)
   const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
   const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
   const ownershipCounts = useMemo(() => countByKey(filtered, (g) => g.ownership), [filtered]);
@@ -1181,8 +1158,10 @@ export default function HomePage() {
 
   const topRightCount = filtered.length;
 
-  // Drag list ids
-  const dragIds = useMemo(() => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)), [filtered]);
+  // Drag list ids (use IGDB_ID when possible, fallback to titleKey)
+  const dragIds = useMemo(() => {
+    return filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`));
+  }, [filtered]);
 
   const idToGame = useMemo(() => {
     const m = new Map<string, Game>();
@@ -1195,28 +1174,42 @@ export default function HomePage() {
 
   const reorderAllowed = editMode && (activeTab === "queued" || activeTab === "wishlist");
 
+  function formatLastSync(ts: number | null) {
+    if (!ts) return "—";
+    try {
+      return new Date(ts).toLocaleString();
+    } catch {
+      return "—";
+    }
+  }
+
   async function saveOrderToSheet(nextIds: string[]) {
     const orderType = activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
     if (!orderType) return;
 
+    // Only send real IGDB ids
     const orderedIgdbIds = nextIds
       .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
       .filter(Boolean);
 
-    if (!orderedIgdbIds.length) throw new Error("No IGDB_ID values found to save order.");
+    if (!orderedIgdbIds.length) {
+      throw new Error("No IGDB_ID values found to save order.");
+    }
 
     const res = await fetch("/sheets/update-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tabName: "Web",
-        orderType,
+        orderType, // "queued" | "wishlist"
         orderedIgdbIds,
       }),
     });
 
     const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json?.ok) throw new Error(json?.error || "Order save failed.");
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.error || "Order save failed.");
+    }
   }
 
   async function handleDragEnd(e: DragEndEvent) {
@@ -1230,11 +1223,14 @@ export default function HomePage() {
     if (oldIndex < 0 || newIndex < 0) return;
 
     const next = arrayMove(dragIds, oldIndex, newIndex);
+
     const orderType = activeTab === "queued" ? "queued" : "wishlist";
 
-    const nextIgdbIds = next.map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : "")).filter(Boolean);
+    const nextIgdbIds = next
+      .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
+      .filter(Boolean);
 
-    // Optimistic update
+    // Optimistic UI update
     setGames((prev) => {
       const rank = new Map<string, number>();
       nextIgdbIds.forEach((igdbId, idx) => rank.set(igdbId, idx + 1));
@@ -1242,10 +1238,13 @@ export default function HomePage() {
       return prev.map((g) => {
         const r = g.igdbId ? rank.get(g.igdbId) : undefined;
         if (!r) return g;
-        return orderType === "queued" ? { ...g, queuedOrder: String(r) } : { ...g, wishlistOrder: String(r) };
+
+        if (orderType === "queued") return { ...g, queuedOrder: String(r) };
+        return { ...g, wishlistOrder: String(r) };
       });
     });
 
+    // Persist
     setSyncState("saving");
     setSyncMsg("Saving…");
     try {
@@ -1293,12 +1292,16 @@ export default function HomePage() {
         return b.count - a.count || a.label.localeCompare(b.label);
       });
 
+    // Newest release in view
     const newest = filtered
       .slice()
       .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))
       .find((g) => Boolean(toDateNum(g.releaseDate)));
 
-    const ratings = filtered.map((g) => Number(norm(g.igdbRating))).filter((n) => Number.isFinite(n));
+    // Average IGDB rating in view
+    const ratings = filtered
+      .map((g) => Number(norm(g.igdbRating)))
+      .filter((n) => Number.isFinite(n));
     const avgIgdb = ratings.length ? Math.round((ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10) / 10 : null;
 
     return {
@@ -1319,24 +1322,119 @@ export default function HomePage() {
     };
   }, [filtered]);
 
-  // NEW: Top rated games this year (from filtered slice; My_Rating desc; cap at 10)
+  // Top Rated Games This Year (uses *filtered* slice + current year tag)
   const topRatedThisYear = useMemo(() => {
     const y = String(new Date().getFullYear());
-    const list = filtered
+    const ranked = filtered
       .filter((g) => g.yearPlayed.includes(y))
-      .map((g) => ({ g, r: Number(norm(g.myRating)) }))
-      .filter((x) => Number.isFinite(x.r))
-      .sort((a, b) => b.r - a.r || a.g.title.localeCompare(b.g.title))
-      .slice(0, 10)
-      .map((x) => x.g);
+      .map((g) => ({
+        title: g.title,
+        coverUrl: g.coverUrl,
+        rating: toNumOrNaN(g.myRating),
+      }))
+      .filter((g) => Number.isFinite(g.rating))
+      .sort((a, b) => (b.rating as number) - (a.rating as number))
+      .slice(0, 14); // keep a few extra; row will clip to fit
 
-    return list;
+    return ranked.map((g) => ({ title: g.title, coverUrl: g.coverUrl }));
   }, [filtered]);
+
+  const topRightArea = (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {/* Sync pill (KEEP / locked) */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 10px",
+          borderRadius: 999,
+          background: COLORS.card,
+          border: `1px solid ${COLORS.border}`,
+          color: COLORS.text,
+          fontSize: 12,
+          fontWeight: 800,
+          maxWidth: "min(640px, 60vw)",
+        }}
+        title={
+          syncState === "saving"
+            ? "Saving / syncing…"
+            : syncState === "ok"
+            ? `Last sync: ${formatLastSync(lastSyncAt)}`
+            : syncState === "error"
+            ? `Error: ${syncMsg}`
+            : `Last sync: ${formatLastSync(lastSyncAt)}`
+        }
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 999,
+            background: syncState === "saving" ? COLORS.warn : syncState === "ok" ? COLORS.accent : syncState === "error" ? COLORS.danger : COLORS.muted,
+            opacity: 0.9,
+            flex: "0 0 auto",
+          }}
+        />
+        <span style={{ color: COLORS.muted, fontWeight: 800, flex: "0 0 auto" }}>
+          {syncState === "saving" ? "Syncing" : syncState === "ok" ? "Synced" : syncState === "error" ? "Error" : "Idle"}
+        </span>
+
+        <span
+          style={{
+            color: COLORS.muted,
+            fontWeight: 750,
+            minWidth: 0,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {lastSyncAt ? formatLastSync(lastSyncAt) : "—"}
+        </span>
+
+        <button
+          onClick={() => setRefreshNonce((n) => n + 1)}
+          style={{
+            marginLeft: 6,
+            border: `1px solid ${COLORS.border}`,
+            background: "rgba(255,255,255,0.04)",
+            color: COLORS.text,
+            borderRadius: 999,
+            padding: "6px 10px",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 900,
+            whiteSpace: "nowrap",
+            flex: "0 0 auto",
+          }}
+          title="Re-sync (re-fetch CSV)"
+        >
+          Re-sync
+        </button>
+      </div>
+
+      {/* Count (number only) */}
+      <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>{topRightCount}</div>
+    </div>
+  );
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
       <style>{`
         aside::-webkit-scrollbar { display: none; }
+
+        /* Stats page responsiveness */
+        @media (max-width: 900px) {
+          .statsGrid4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+          .statsGrid3 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+          .statsGrid2 { grid-template-columns: 1fr !important; }
+          .statsSingle { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 520px) {
+          .statsGrid4 { grid-template-columns: 1fr !important; }
+          .statsGrid3 { grid-template-columns: 1fr !important; }
+        }
 
         @media (max-width: 900px) {
           .sidebar {
@@ -1349,9 +1447,7 @@ export default function HomePage() {
             transition: transform 160ms ease;
             border-right: 1px solid ${COLORS.border};
           }
-          .sidebar.open {
-            transform: translateX(0);
-          }
+          .sidebar.open { transform: translateX(0); }
           .overlay {
             position: fixed;
             inset: 0;
@@ -1421,14 +1517,6 @@ export default function HomePage() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Chris&apos; Game Library</div>
           </div>
 
-          {/* ✅ 2.1.2: Sync card under header, above search */}
-          <SyncCard
-            syncState={syncState}
-            syncMsg={syncMsg}
-            lastSyncAt={lastSyncAt}
-            onResync={() => setRefreshNonce((n) => n + 1)}
-          />
-
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -1441,7 +1529,6 @@ export default function HomePage() {
               background: COLORS.input,
               color: COLORS.text,
               fontSize: 12,
-              marginTop: 10,
             }}
           />
 
@@ -1482,14 +1569,7 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>COVER SIZE</div>
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
-            <input
-              type="range"
-              min={90}
-              max={260}
-              value={tileSize}
-              onChange={(e) => setTileSize(Number(e.target.value))}
-              style={{ width: "100%" }}
-            />
+            <input type="range" min={90} max={260} value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: "100%" }} />
           </div>
         </div>
 
@@ -1594,8 +1674,7 @@ export default function HomePage() {
               </button>
             )}
 
-            {/* Count (number only) */}
-            <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>{topRightCount}</div>
+            {topRightArea}
           </div>
         </div>
 
@@ -1605,15 +1684,14 @@ export default function HomePage() {
         ) : activeTab === "stats" ? (
           // ===== STATS MODE =====
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
-              {/* ✅ 2.1.2 label change */}
+            <div className="statsGrid4" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
               <StatCard title="Total Games" value={statsData.total} subtitle="Respects facets + search" />
               <StatCard title="Completed" value={statsData.completedInView} />
               <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
               <StatCard title="Queued" value={statsData.queuedInView} />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+            <div className="statsGrid3" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
               <StatCard title="Wishlist" value={statsData.wishlistInView} />
               <StatCard
                 title="Avg IGDB rating"
@@ -1623,20 +1701,22 @@ export default function HomePage() {
               <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
             </div>
 
-            {/* ✅ 2.1.2: Single-row, responsive top rated covers */}
-            <TopRatedRow games={topRatedThisYear} onPick={(g) => setSelectedGame(g)} />
+            {/* NEW section (single row, clips to fit) */}
+            <TopRatedRow title="Top Rated Games This Year" games={topRatedThisYear} />
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Top Platforms" items={statsData.byPlatform} />
               <TopList title="Top Genres" items={statsData.byGenre} />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Status Breakdown" items={statsData.byStatus} />
               <TopList title="Ownership Breakdown" items={statsData.byOwnership} />
             </div>
 
-            <TopList title="Year Played (most recent first)" items={statsData.byYearPlayed} max={18} />
+            <div className="statsSingle" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+              <TopList title="Year Played (most recent first)" items={statsData.byYearPlayed} max={18} />
+            </div>
 
             <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
               Tip: Use Platform/Genre/Year facets + search, then jump to Stats to see the breakdown of that slice.
@@ -1657,7 +1737,6 @@ export default function HomePage() {
                       id={id}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      tileSize={tileSize}
                       disabled={!reorderAllowed}
                       onClick={() => setSelectedGame(g)}
                     />
@@ -1785,13 +1864,10 @@ export default function HomePage() {
                 <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Field label="Release Date" value={selectedGame.releaseDate} />
                   <Field label="Year Played" value={selectedGame.yearPlayed.join(", ")} />
-
                   <Field label="IGDB Rating" value={selectedGame.igdbRating} />
                   <Field label="My Rating" value={selectedGame.myRating} />
-
                   <Field label="Hours Played" value={selectedGame.hoursPlayed} />
                   <Field label="Developer" value={selectedGame.developer} />
-
                   <Field label="Date Added" value={selectedGame.dateAdded} />
                   <Field label="Date Completed" value={selectedGame.dateCompleted} />
                 </div>
