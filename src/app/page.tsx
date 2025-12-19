@@ -1,12 +1,9 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.1.3
+   Version: 2.1.4
    Notes:
-   - CHANGE: Top-right item count is now a bubble (pill)
-   - CHANGE: Show current version at bottom of left sidebar
-   - FIX: Stats page responsive (cards + lists auto-fit; no cut-off on resize; mobile stacks cleanly)
-   - FIX: Remove unused @ts-expect-error that broke Vercel TypeScript build
-   - KEEP: Sync status indicator under avatar + “Re-sync” + last sync date/time (locked)
+   - RESTORED: “Top Rated Games This Year” in Stats view (capped at 5 covers, evenly spaced)
+   - KEEP: Stats top tab + sync indicator + Re-sync in LEFT sidebar under avatar
    - KEEP: Facets affect stats (stats uses the SAME filtered dataset)
    - KEEP: Drag + drop reorder for Queued + Wishlist (Edit Mode toggle), writes to Sheets API route
    - KEEP: Modal game detail view (cover/tags left; screenshot + fields right; 2-col info; desc full width)
@@ -64,7 +61,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const APP_VERSION = "2.1.3";
+const VERSION = "2.1.4";
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -182,7 +179,6 @@ function rowToGame(row: Row): Game | null {
   };
 }
 
-// Dedupe by Title (merge tags/fields so filters still work)
 function dedupeByTitle(rows: Game[]) {
   const map = new Map<string, Game>();
 
@@ -202,21 +198,18 @@ function dedupeByTitle(rows: Game[]) {
     const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
 
-    // releaseDate: earliest non-empty
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
     if (!aRel && bRel) releaseDate = g.releaseDate;
     else if (aRel && bRel) releaseDate = aRel <= bRel ? existing.releaseDate : g.releaseDate;
 
-    // dateAdded: earliest non-empty
     const aAdded = toDateNum(existing.dateAdded);
     const bAdded = toDateNum(g.dateAdded);
     let dateAdded = existing.dateAdded;
     if (!aAdded && bAdded) dateAdded = g.dateAdded;
     else if (aAdded && bAdded) dateAdded = aAdded <= bAdded ? existing.dateAdded : g.dateAdded;
 
-    // dateCompleted: latest non-empty
     const aComp = toDateNum(existing.dateCompleted);
     const bComp = toDateNum(g.dateCompleted);
     let dateCompleted = existing.dateCompleted;
@@ -306,32 +299,7 @@ function CountBadge({ n }: { n: number }) {
         color: COLORS.muted,
         fontSize: 11,
         lineHeight: "16px",
-        fontWeight: 800,
       }}
-    >
-      {n}
-    </span>
-  );
-}
-
-function BubbleCount({ n }: { n: number }) {
-  return (
-    <span
-      style={{
-        minWidth: 34,
-        height: 28,
-        padding: "0 10px",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: 999,
-        background: COLORS.card,
-        border: `1px solid ${COLORS.border}`,
-        color: COLORS.text,
-        fontSize: 13,
-        fontWeight: 950,
-      }}
-      title={`${n}`}
     >
       {n}
     </span>
@@ -577,7 +545,6 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
   );
 }
 
-/** Stats block – locked look */
 function StatsBlock({
   left,
   right,
@@ -611,7 +578,15 @@ function StatsBlock({
 
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 8, letterSpacing: "0.04em" }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: COLORS.muted,
+          marginBottom: 8,
+          letterSpacing: "0.04em",
+        }}
+      >
         STATS
       </div>
 
@@ -705,6 +680,7 @@ function SortableTile({
   id: string;
   title: string;
   coverUrl: string;
+  tileSize: number;
   disabled: boolean;
   onClick: () => void;
 }) {
@@ -768,26 +744,14 @@ function SortableTile({
 /** Stats mode components */
 function StatCard({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {
   return (
-    <div
-      style={{
-        background: COLORS.panel,
-        border: `1px solid ${COLORS.border}`,
-        borderRadius: 16,
-        padding: 14,
-        minWidth: 0,
-      }}
-    >
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
       <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
         {title}
       </div>
       <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
         {value}
       </div>
-      {subtitle ? (
-        <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
-          {subtitle}
-        </div>
-      ) : null}
+      {subtitle ? <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>{subtitle}</div> : null}
     </div>
   );
 }
@@ -805,15 +769,7 @@ function TopList({
   const top = shown[0]?.count || 0;
 
   return (
-    <div
-      style={{
-        background: COLORS.panel,
-        border: `1px solid ${COLORS.border}`,
-        borderRadius: 16,
-        padding: 14,
-        minWidth: 0,
-      }}
-    >
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
       <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
         {title}
       </div>
@@ -823,37 +779,26 @@ function TopList({
           shown.map((x) => {
             const pct = top ? Math.max(0.08, x.count / top) : 0.08;
             return (
-              <div key={x.label} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                <div
-                  style={{
-                    width: 120,
-                    color: COLORS.text,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    flex: "0 0 auto",
-                  }}
-                >
+              <div key={x.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 110, color: COLORS.text, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {x.label}
                 </div>
 
                 <div
                   style={{
                     flex: 1,
-                    minWidth: 0,
                     height: 10,
                     borderRadius: 999,
                     border: `1px solid ${COLORS.border}`,
                     background: "rgba(255,255,255,0.04)",
                     overflow: "hidden",
+                    minWidth: 0,
                   }}
                 >
                   <div style={{ height: "100%", width: `${Math.round(pct * 100)}%`, background: COLORS.statNumber, opacity: 0.55 }} />
                 </div>
 
-                <div style={{ width: 34, textAlign: "right", color: COLORS.muted, fontSize: 12, fontWeight: 750, flex: "0 0 auto" }}>
+                <div style={{ width: 34, textAlign: "right", color: COLORS.muted, fontSize: 12, fontWeight: 750 }}>
                   {x.count}
                 </div>
               </div>
@@ -861,6 +806,61 @@ function TopList({
           })
         ) : (
           <div style={{ color: COLORS.muted, fontSize: 12 }}>No data.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TopRatedRow({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<{ title: string; coverUrl: string; onClick: () => void }>;
+}) {
+  return (
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+        {title}
+      </div>
+
+      <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "nowrap", alignItems: "stretch" }}>
+        {items.length ? (
+          items.map((g, i) => (
+            <button
+              key={`${g.title}-${i}`}
+              onClick={g.onClick}
+              title={g.title}
+              style={{
+                flex: "1 1 0",
+                minWidth: 0,
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.card,
+                borderRadius: 14,
+                overflow: "hidden",
+                padding: 0,
+                cursor: "pointer",
+                boxShadow: "0 18px 45px rgba(0,0,0,.45)",
+                aspectRatio: "2 / 3",
+              }}
+            >
+              {g.coverUrl ? (
+                <img
+                  src={g.coverUrl}
+                  alt={g.title}
+                  loading="lazy"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+                  No cover
+                </div>
+              )}
+            </button>
+          ))
+        ) : (
+          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games for this year in the current view.</div>
         )}
       </div>
     </div>
@@ -886,7 +886,9 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">("games");
+  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">(
+    "games"
+  );
 
   const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">(
     "releaseDate"
@@ -901,16 +903,12 @@ export default function HomePage() {
   const [openGenres, setOpenGenres] = useState(false);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
-
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
-  // Drag/drop edit mode + syncing indicator
   const [editMode, setEditMode] = useState(false);
   const [syncState, setSyncState] = useState<"idle" | "saving" | "ok" | "error">("idle");
   const [syncMsg, setSyncMsg] = useState<string>("");
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
-
-  // Used to force CSV re-fetch
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const sensors = useSensors(
@@ -918,7 +916,6 @@ export default function HomePage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Mobile sizing (NO ts-expect-error; safe legacy fallback)
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 900px)");
 
@@ -929,6 +926,7 @@ export default function HomePage() {
     };
 
     apply();
+
     const onChange = () => apply();
 
     if (typeof mq.addEventListener === "function") {
@@ -936,25 +934,10 @@ export default function HomePage() {
       return () => mq.removeEventListener("change", onChange);
     }
 
-    // Legacy Safari
+    // legacy Safari
     (mq as any).addListener?.(onChange);
     return () => (mq as any).removeListener?.(onChange);
   }, []);
-
-  function formatLastSync(ts: number | null) {
-    if (!ts) return "—";
-    try {
-      return new Date(ts).toLocaleString(undefined, {
-        month: "short",
-        day: "2-digit",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    } catch {
-      return "—";
-    }
-  }
 
   async function fetchCsvNow() {
     if (!csvUrl) return;
@@ -986,7 +969,6 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [csvUrl, refreshNonce]);
 
-  // Default sort rules when changing top tabs
   useEffect(() => {
     if (activeTab === "queued") {
       setSortBy("queuedOrder");
@@ -999,9 +981,7 @@ export default function HomePage() {
       setSortDir("desc");
     }
 
-    if (activeTab !== "queued" && activeTab !== "wishlist") {
-      setEditMode(false);
-    }
+    if (activeTab !== "queued" && activeTab !== "wishlist") setEditMode(false);
   }, [activeTab]);
 
   const platforms = useMemo(() => uniqueSorted(games.flatMap((g) => g.platform)), [games]);
@@ -1048,13 +1028,11 @@ export default function HomePage() {
         if (!set.has(selectedPlatform.toLowerCase())) return false;
       }
 
-      // Genres = AND
       if (selectedGenres.length) {
         const set = new Set(g.genres.map((x) => x.toLowerCase()));
         for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
       }
 
-      // Years Played = OR
       if (selectedYearsPlayed.length) {
         const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
         const any = selectedYearsPlayed.some((y) => set.has(y.toLowerCase()));
@@ -1067,12 +1045,8 @@ export default function HomePage() {
     const dir = sortDir === "asc" ? 1 : -1;
 
     return base.sort((a, b) => {
-      if (sortBy === "queuedOrder") {
-        return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
-      }
-      if (sortBy === "wishlistOrder") {
-        return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
-      }
+      if (sortBy === "queuedOrder") return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
+      if (sortBy === "wishlistOrder") return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
 
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
       if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
@@ -1095,7 +1069,6 @@ export default function HomePage() {
     sortDir,
   ]);
 
-  // Facet counts (counts in view)
   const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
   const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
   const ownershipCounts = useMemo(() => countByKey(filtered, (g) => g.ownership), [filtered]);
@@ -1103,7 +1076,6 @@ export default function HomePage() {
   const yearsPlayedCounts = useMemo(() => countByTagList(filtered, (g) => g.yearPlayed), [filtered]);
   const genreCounts = useMemo(() => countByTagList(filtered, (g) => g.genres), [filtered]);
 
-  // Sidebar stats (locked layout)
   const gamesTotal = games.length;
   const year = new Date().getFullYear();
   const inYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
@@ -1118,7 +1090,6 @@ export default function HomePage() {
   const sidebarStyle: React.CSSProperties = {
     width: 340,
     minWidth: 340,
-    flex: "0 0 340px", // prevent shrink on desktop
     padding: 16,
     background: COLORS.panel,
     borderRight: `1px solid ${COLORS.border}`,
@@ -1132,9 +1103,7 @@ export default function HomePage() {
 
   const topRightCount = filtered.length;
 
-  const dragIds = useMemo(() => {
-    return filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`));
-  }, [filtered]);
+  const dragIds = useMemo(() => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)), [filtered]);
 
   const idToGame = useMemo(() => {
     const m = new Map<string, Game>();
@@ -1147,6 +1116,15 @@ export default function HomePage() {
 
   const reorderAllowed = editMode && (activeTab === "queued" || activeTab === "wishlist");
 
+  function formatLastSync(ts: number | null) {
+    if (!ts) return "—";
+    try {
+      return new Date(ts).toLocaleString();
+    } catch {
+      return "—";
+    }
+  }
+
   async function saveOrderToSheet(nextIds: string[]) {
     const orderType = activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
     if (!orderType) return;
@@ -1155,9 +1133,7 @@ export default function HomePage() {
       .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
       .filter(Boolean);
 
-    if (!orderedIgdbIds.length) {
-      throw new Error("No IGDB_ID values found to save order.");
-    }
+    if (!orderedIgdbIds.length) throw new Error("No IGDB_ID values found to save order.");
 
     const res = await fetch("/sheets/update-order", {
       method: "POST",
@@ -1170,9 +1146,7 @@ export default function HomePage() {
     });
 
     const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json?.ok) {
-      throw new Error(json?.error || "Order save failed.");
-    }
+    if (!res.ok || !json?.ok) throw new Error(json?.error || "Order save failed.");
   }
 
   async function handleDragEnd(e: DragEndEvent) {
@@ -1188,7 +1162,6 @@ export default function HomePage() {
     const next = arrayMove(dragIds, oldIndex, newIndex);
 
     const orderType = activeTab === "queued" ? "queued" : "wishlist";
-
     const nextIgdbIds = next
       .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
       .filter(Boolean);
@@ -1200,7 +1173,6 @@ export default function HomePage() {
       return prev.map((g) => {
         const r = g.igdbId ? rank.get(g.igdbId) : undefined;
         if (!r) return g;
-
         if (orderType === "queued") return { ...g, queuedOrder: String(r) };
         return { ...g, wishlistOrder: String(r) };
       });
@@ -1219,7 +1191,6 @@ export default function HomePage() {
     }
   }
 
-  // Stats mode data (based on *filtered*)
   const statsData = useMemo(() => {
     const total = filtered.length;
 
@@ -1258,10 +1229,18 @@ export default function HomePage() {
       .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))
       .find((g) => Boolean(toDateNum(g.releaseDate)));
 
-    const ratings = filtered
-      .map((g) => Number(norm(g.igdbRating)))
-      .filter((n) => Number.isFinite(n));
+    const ratings = filtered.map((g) => Number(norm(g.igdbRating))).filter((n) => Number.isFinite(n));
     const avgIgdb = ratings.length ? Math.round((ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10) / 10 : null;
+
+    // ✅ RESTORED: Top Rated Games This Year (cap 5)
+    const thisYear = String(new Date().getFullYear());
+    const topRatedThisYear = filtered
+      .filter((g) => g.yearPlayed.includes(thisYear))
+      .map((g) => ({ g, r: Number(norm(g.myRating)) }))
+      .filter((x) => Number.isFinite(x.r))
+      .sort((a, b) => b.r - a.r || toDateNum(b.g.releaseDate) - toDateNum(a.g.releaseDate) || a.g.title.localeCompare(b.g.title))
+      .slice(0, 5)
+      .map((x) => x.g);
 
     return {
       total,
@@ -1278,26 +1257,107 @@ export default function HomePage() {
       newestDate: newest?.releaseDate || "—",
       avgIgdb,
       ratedCount: ratings.length,
+      topRatedThisYear,
     };
   }, [filtered]);
+
+  function SyncBar() {
+    return (
+      <div
+        style={{
+          marginTop: 10,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          padding: "10px 12px",
+          borderRadius: 14,
+          background: COLORS.card,
+          border: `1px solid ${COLORS.border}`,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <span
+            style={{
+              width: 9,
+              height: 9,
+              borderRadius: 999,
+              background:
+                syncState === "saving"
+                  ? COLORS.warn
+                  : syncState === "ok"
+                  ? COLORS.accent
+                  : syncState === "error"
+                  ? COLORS.danger
+                  : COLORS.muted,
+              opacity: 0.9,
+              flex: "0 0 auto",
+            }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 900 }}>
+                {syncState === "saving" ? "Syncing" : syncState === "ok" ? "Synced" : syncState === "error" ? "Error" : "Idle"}
+              </div>
+              <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>
+                {lastSyncAt ? formatLastSync(lastSyncAt) : "—"}
+              </div>
+            </div>
+            {syncState === "error" && syncMsg ? (
+              <div style={{ color: COLORS.danger, fontSize: 11, fontWeight: 800, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {syncMsg}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <button
+          onClick={() => setRefreshNonce((n) => n + 1)}
+          style={{
+            border: `1px solid ${COLORS.border}`,
+            background: "rgba(255,255,255,0.04)",
+            color: COLORS.text,
+            borderRadius: 999,
+            padding: "7px 10px",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 900,
+            flex: "0 0 auto",
+            whiteSpace: "nowrap",
+          }}
+          title="Re-sync (re-fetch CSV)"
+        >
+          Re-sync
+        </button>
+      </div>
+    );
+  }
+
+  const topRightCountBubble = (
+    <div
+      title={`${topRightCount} items in view`}
+      style={{
+        height: 34,
+        padding: "0 12px",
+        borderRadius: 999,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: COLORS.card,
+        border: `1px solid ${COLORS.border}`,
+        color: COLORS.text,
+        fontSize: 13,
+        fontWeight: 950,
+      }}
+    >
+      {topRightCount}
+    </div>
+  );
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
       <style>{`
         aside::-webkit-scrollbar { display: none; }
-
-        /* Responsive stats grids (fix cut-off on resize + mobile) */
-        .statsGrid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-        .statsGrid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-        .statsGrid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-
-        @media (max-width: 1200px) {
-          .statsGrid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .statsGrid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        }
-        @media (max-width: 760px) {
-          .statsGrid4, .statsGrid3, .statsGrid2 { grid-template-columns: 1fr; }
-        }
 
         @media (max-width: 900px) {
           .sidebar {
@@ -1309,18 +1369,9 @@ export default function HomePage() {
             transform: translateX(-110%);
             transition: transform 160ms ease;
             border-right: 1px solid ${COLORS.border};
-            width: 340px !important;
-            min-width: 340px !important;
           }
-          .sidebar.open {
-            transform: translateX(0);
-          }
-          .overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.55);
-            z-index: 40;
-          }
+          .sidebar.open { transform: translateX(0); }
+          .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 40; }
           .mobileTopbar {
             position: sticky;
             top: 0;
@@ -1338,7 +1389,6 @@ export default function HomePage() {
 
       {filtersOpen && <div className="overlay" onClick={() => setFiltersOpen(false)} />}
 
-      {/* Sidebar */}
       <aside className={`sidebar ${filtersOpen ? "open" : ""}`} style={sidebarStyle} aria-label="Filters">
         <div
           style={{
@@ -1368,103 +1418,18 @@ export default function HomePage() {
             Close
           </button>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <img
               src={headerAvatarUrl}
               alt="Chris"
               referrerPolicy="no-referrer"
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: 999,
-                objectFit: "cover",
-                border: `1px solid ${COLORS.border}`,
-              }}
+              style={{ width: 60, height: 60, borderRadius: 999, objectFit: "cover", border: `1px solid ${COLORS.border}` }}
             />
             <div style={{ fontSize: 18, fontWeight: 900 }}>Chris&apos; Game Library</div>
           </div>
 
-          {/* Sync status bar (LOCKED placement under avatar, above search) */}
-          <div
-            style={{
-              marginBottom: 10,
-              padding: "10px 10px",
-              borderRadius: 14,
-              background: COLORS.card,
-              border: `1px solid ${COLORS.border}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-            }}
-            title={
-              syncState === "saving"
-                ? "Saving / syncing…"
-                : syncState === "ok"
-                ? `Last sync: ${formatLastSync(lastSyncAt)}`
-                : syncState === "error"
-                ? `Error: ${syncMsg}`
-                : `Last sync: ${formatLastSync(lastSyncAt)}`
-            }
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 999,
-                  background:
-                    syncState === "saving" ? COLORS.warn : syncState === "ok" ? COLORS.accent : syncState === "error" ? COLORS.danger : COLORS.muted,
-                  opacity: 0.9,
-                  flex: "0 0 auto",
-                }}
-              />
-              <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "baseline", minWidth: 0 }}>
-                  <span style={{ color: COLORS.muted, fontWeight: 900, fontSize: 12 }}>
-                    {syncState === "saving" ? "Syncing" : syncState === "ok" ? "Synced" : syncState === "error" ? "Error" : "Idle"}
-                  </span>
-                  <span
-                    style={{
-                      color: COLORS.muted,
-                      fontWeight: 750,
-                      fontSize: 12,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      maxWidth: 150,
-                    }}
-                  >
-                    {lastSyncAt ? formatLastSync(lastSyncAt) : "—"}
-                  </span>
-                </div>
-                {syncState === "error" && syncMsg ? (
-                  <div style={{ color: COLORS.danger, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {syncMsg}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <button
-              onClick={() => setRefreshNonce((n) => n + 1)}
-              style={{
-                border: `1px solid ${COLORS.border}`,
-                background: "rgba(255,255,255,0.04)",
-                color: COLORS.text,
-                borderRadius: 999,
-                padding: "7px 10px",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 900,
-                whiteSpace: "nowrap",
-                flex: "0 0 auto",
-              }}
-              title="Re-sync (re-fetch CSV)"
-            >
-              Re-sync
-            </button>
-          </div>
+          {/* ✅ Sync bar under avatar */}
+          <SyncBar />
 
           <input
             value={q}
@@ -1472,6 +1437,7 @@ export default function HomePage() {
             placeholder="Search…"
             style={{
               width: "100%",
+              marginTop: 12,
               padding: "9px 10px",
               borderRadius: 12,
               border: `1px solid ${COLORS.border}`,
@@ -1563,18 +1529,13 @@ export default function HomePage() {
           Clear Filters
         </button>
 
-        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>
-          Showing {filtered.length} / {games.length}
-        </div>
+        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>Showing {filtered.length} / {games.length}</div>
 
-        {/* Version (bottom-left sidebar) */}
-        <div style={{ marginTop: 18, paddingTop: 10, borderTop: `1px solid ${COLORS.border}`, fontSize: 11, color: COLORS.muted, fontWeight: 800 }}>
-          Version {APP_VERSION}
-        </div>
+        {/* ✅ Version marker */}
+        <div style={{ marginTop: 18, fontSize: 11, color: COLORS.muted, opacity: 0.8 }}>Version {VERSION}</div>
       </aside>
 
-      {/* Main */}
-      <main style={{ flex: 1, padding: 18, minWidth: 0 }}>
+      <main style={{ flex: 1, padding: 18 }}>
         <div className="mobileTopbar mobileOnly">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <button
@@ -1592,15 +1553,12 @@ export default function HomePage() {
             >
               Filters
             </button>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>
-              <BubbleCount n={topRightCount} />
-            </div>
+            <div style={{ fontSize: 12, color: COLORS.muted }}>{topRightCount}</div>
           </div>
         </div>
 
-        {/* Top nav + right area */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
             <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
             <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
@@ -1609,7 +1567,7 @@ export default function HomePage() {
             <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "0 0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {(activeTab === "queued" || activeTab === "wishlist") && (
               <button
                 onClick={() => setEditMode((v) => !v)}
@@ -1622,7 +1580,6 @@ export default function HomePage() {
                   cursor: "pointer",
                   fontWeight: 900,
                   fontSize: 12,
-                  whiteSpace: "nowrap",
                 }}
                 title="Toggle drag+drop ordering"
               >
@@ -1630,24 +1587,34 @@ export default function HomePage() {
               </button>
             )}
 
-            {/* Bubble count (top-right) */}
-            <BubbleCount n={topRightCount} />
+            {topRightCountBubble}
           </div>
         </div>
 
-        {/* CONTENT */}
         {loading ? (
           <div>Loading…</div>
         ) : activeTab === "stats" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-            <div className="statsGrid4">
-              <StatCard title="Total Games" value={statsData.total} subtitle="Respects facets + search" />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
+              <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
               <StatCard title="Completed" value={statsData.completedInView} />
               <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
               <StatCard title="Queued" value={statsData.queuedInView} />
             </div>
 
-            <div className="statsGrid3">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
               <StatCard title="Wishlist" value={statsData.wishlistInView} />
               <StatCard
                 title="Avg IGDB rating"
@@ -1657,12 +1624,22 @@ export default function HomePage() {
               <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
             </div>
 
-            <div className="statsGrid2">
+            {/* ✅ RESTORED Top Rated row (cap 5, evenly spaced) */}
+            <TopRatedRow
+              title="Top Rated Games This Year"
+              items={statsData.topRatedThisYear.map((g) => ({
+                title: g.title,
+                coverUrl: g.coverUrl,
+                onClick: () => setSelectedGame(g),
+              }))}
+            />
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Top Platforms" items={statsData.byPlatform} />
               <TopList title="Top Genres" items={statsData.byGenre} />
             </div>
 
-            <div className="statsGrid2">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Status Breakdown" items={statsData.byStatus} />
               <TopList title="Ownership Breakdown" items={statsData.byOwnership} />
             </div>
@@ -1672,6 +1649,12 @@ export default function HomePage() {
             <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
               Tip: Use Platform/Genre/Year facets + search, then jump to Stats to see the breakdown of that slice.
             </div>
+
+            <style>{`
+              @media (max-width: 900px) {
+                .statsGrid4 { grid-template-columns: 1fr !important; }
+              }
+            `}</style>
           </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1687,6 +1670,7 @@ export default function HomePage() {
                       id={id}
                       title={g.title}
                       coverUrl={g.coverUrl}
+                      tileSize={tileSize}
                       disabled={!reorderAllowed}
                       onClick={() => setSelectedGame(g)}
                     />
@@ -1698,7 +1682,6 @@ export default function HomePage() {
         )}
       </main>
 
-      {/* Modal */}
       {selectedGame && (
         <div
           role="dialog"
@@ -1751,7 +1734,6 @@ export default function HomePage() {
             </button>
 
             <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-              {/* Left: cover + tags */}
               <div style={{ width: 260, flex: "0 0 auto" }}>
                 <div
                   style={{
@@ -1774,7 +1756,6 @@ export default function HomePage() {
 
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>{selectedGame.title}</div>
-
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {selectedGame.platform.slice(0, 6).map((p) => (
                       <TagPill key={`p-${p}`} text={p} />
@@ -1790,7 +1771,6 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Right: screenshot + info */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 {selectedGame.screenshotUrl ? (
                   <div
@@ -1826,7 +1806,10 @@ export default function HomePage() {
                 </div>
 
                 <div style={{ marginTop: 10 }}>
-                  <Field label="Description" value={selectedGame.description ? <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div> : ""} />
+                  <Field
+                    label="Description"
+                    value={selectedGame.description ? <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div> : ""}
+                  />
                 </div>
               </div>
             </div>
