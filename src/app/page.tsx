@@ -1,9 +1,10 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.1.0
+   Version: 2.1.1
    Notes:
-   - NEW: “Stats” top tab that switches main area into a stats/dashboard view (no covers)
-   - NEW: Sync status indicator + “Re-sync” (re-fetch CSV) + last sync date/time
+   - MOVE: Sync status pill + Re-sync + last sync time into left sidebar under avatar/title (above search)
+   - NEW: Stats mode section "Top Rated Games This Year" (covers) based on My_Rating + YearPlayed=current year
+   - KEEP: Stats mode layout + cards + bar lists unchanged (your “cool stats and bars”)
    - KEEP: Facets affect stats (stats uses the SAME filtered dataset)
    - KEEP: Drag + drop reorder for Queued + Wishlist (Edit Mode toggle), writes to Sheets API route
    - KEEP: Modal game detail view (cover/tags left; screenshot + fields right; 2-col info; desc/screenshot full width)
@@ -12,7 +13,7 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import {
   DndContext,
@@ -24,11 +25,7 @@ import {
   closestCenter,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import {
-  SortableContext,
-  useSortable,
-  rectSortingStrategy,
-} from "@dnd-kit/sortable";
+import { SortableContext, useSortable, rectSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 type Row = Record<string, string>;
@@ -37,7 +34,7 @@ type Game = {
   title: string;
   coverUrl: string;
 
-  platform: string[]; // Platform(s)
+  platform: string[];
   status: string;
   genres: string[];
   ownership: string;
@@ -47,7 +44,7 @@ type Game = {
   dateAdded: string;
 
   completed: string;
-  backlog: string; // legacy
+  backlog: string;
 
   dateCompleted: string;
   yearPlayed: string[];
@@ -98,14 +95,7 @@ function splitTags(s: string) {
 
 function toBool(v: string) {
   const s = norm(v).toLowerCase();
-  return (
-    s === "true" ||
-    s === "yes" ||
-    s === "y" ||
-    s === "1" ||
-    s === "checked" ||
-    s === "x"
-  );
+  return s === "true" || s === "yes" || s === "y" || s === "1" || s === "checked" || s === "x";
 }
 
 function toDateNum(s: string) {
@@ -122,11 +112,7 @@ function toNumOrNaN(v: unknown) {
 
 function uniqueSorted(values: string[]) {
   return Array.from(
-    new Set(
-      values
-        .map((x) => norm(x))
-        .filter((x) => x && x !== "#REF!" && x.toLowerCase() !== "n/a")
-    )
+    new Set(values.map((x) => norm(x)).filter((x) => x && x !== "#REF!" && x.toLowerCase() !== "n/a"))
   ).sort((a, b) => a.localeCompare(b));
 }
 
@@ -208,7 +194,7 @@ function dedupeByTitle(rows: Game[]) {
     const completed = toBool(existing.completed) || toBool(g.completed) ? "true" : "";
     const backlog = toBool(existing.backlog) || toBool(g.backlog) ? "true" : "";
 
-    // releaseDate: earliest non-empty (keeps “true release” stable)
+    // releaseDate: earliest non-empty
     const aRel = toDateNum(existing.releaseDate);
     const bRel = toDateNum(g.releaseDate);
     let releaseDate = existing.releaseDate;
@@ -242,7 +228,6 @@ function dedupeByTitle(rows: Game[]) {
     const description = existing.description || g.description;
     const screenshotUrl = existing.screenshotUrl || g.screenshotUrl;
 
-    // Keep the first non-empty queued/wishlist order (if duplicates exist)
     const queuedOrder = existing.queuedOrder || g.queuedOrder;
     const wishlistOrder = existing.wishlistOrder || g.wishlistOrder;
 
@@ -290,6 +275,7 @@ function countByTagList(base: Game[], getTags: (g: Game) => string[]) {
   for (const g of base) {
     for (const tag of getTags(g)) {
       const k = norm(tag);
+      if (!k || k === "#REF!" || k.toLowerCase() !== k && k.toLowerCase() === "n/a") continue;
       if (!k || k === "#REF!" || k.toLowerCase() === "n/a") continue;
       map.set(k, (map.get(k) ?? 0) + 1);
     }
@@ -433,21 +419,8 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                  opacity: c === 0 ? 0.55 : 1,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -498,21 +471,8 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: active ? 700 : 500,
-                  opacity: c === 0 ? 0.55 : 1,
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -552,15 +512,7 @@ function SmallSelect({
   );
 }
 
-function TabButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -627,26 +579,11 @@ function StatsBlock({
 
   return (
     <div style={{ marginTop: 10 }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: COLORS.muted,
-          marginBottom: 8,
-          letterSpacing: "0.04em",
-        }}
-      >
+      <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted, marginBottom: 8, letterSpacing: "0.04em" }}>
         STATS
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          columnGap: 18,
-          rowGap: 10,
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 18, rowGap: 10 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {left.map((s) => (
             <div key={s.label} style={rowStyle}>
@@ -700,25 +637,10 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
         minHeight: 56,
       }}
     >
-      <div
-        style={{
-          color: COLORS.muted,
-          fontSize: 11,
-          fontWeight: 800,
-          letterSpacing: "0.04em",
-          marginBottom: 6,
-        }}
-      >
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", marginBottom: 6 }}>
         {label}
       </div>
-      <div
-        style={{
-          color: COLORS.text,
-          fontSize: 13,
-          fontWeight: 700,
-          lineHeight: 1.35,
-        }}
-      >
+      <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>
         {value || <span style={{ color: COLORS.muted }}>—</span>}
       </div>
     </div>
@@ -733,16 +655,13 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   const aHas = Number.isFinite(a);
   const bHas = Number.isFinite(b);
 
-  // order numbers first (ascending)
   if (aHas && bHas) {
     if (a !== b) return a - b;
-    // tie-breaker: newest release first
     return toDateNum(bRel) - toDateNum(aRel);
   }
   if (aHas && !bHas) return -1;
   if (!aHas && bHas) return 1;
 
-  // neither has order -> newest release first
   return toDateNum(bRel) - toDateNum(aRel);
 }
 
@@ -751,21 +670,16 @@ function SortableTile({
   id,
   title,
   coverUrl,
-  tileSize,
   disabled,
   onClick,
 }: {
   id: string;
   title: string;
   coverUrl: string;
-  tileSize: number;
   disabled: boolean;
   onClick: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    disabled,
-  });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -803,27 +717,13 @@ function SortableTile({
               src={coverUrl}
               alt={title}
               loading="lazy"
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).style.display = "none";
               }}
             />
           ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: COLORS.muted,
-                fontSize: 12,
-              }}
-            >
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
               No cover
             </div>
           )}
@@ -834,35 +734,16 @@ function SortableTile({
 }
 
 /** Stats mode components */
-function StatCard({
-  title,
-  value,
-  subtitle,
-}: {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-}) {
+function StatCard({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {
   return (
-    <div
-      style={{
-        background: COLORS.panel,
-        border: `1px solid ${COLORS.border}`,
-        borderRadius: 16,
-        padding: 14,
-      }}
-    >
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
       <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
         {title}
       </div>
       <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
         {value}
       </div>
-      {subtitle ? (
-        <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
-          {subtitle}
-        </div>
-      ) : null}
+      {subtitle ? <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>{subtitle}</div> : null}
     </div>
   );
 }
@@ -880,14 +761,7 @@ function TopList({
   const top = shown[0]?.count || 0;
 
   return (
-    <div
-      style={{
-        background: COLORS.panel,
-        border: `1px solid ${COLORS.border}`,
-        borderRadius: 16,
-        padding: 14,
-      }}
-    >
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
       <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
         {title}
       </div>
@@ -936,13 +810,155 @@ function TopList({
   );
 }
 
+function SyncBar({
+  syncState,
+  syncMsg,
+  lastSyncAt,
+  onResync,
+}: {
+  syncState: "idle" | "saving" | "ok" | "error";
+  syncMsg: string;
+  lastSyncAt: number | null;
+  onResync: () => void;
+}) {
+  function formatLastSync(ts: number | null) {
+    if (!ts) return "—";
+    try {
+      return new Date(ts).toLocaleString();
+    } catch {
+      return "—";
+    }
+  }
+
+  const dot =
+    syncState === "saving" ? COLORS.warn : syncState === "ok" ? COLORS.accent : syncState === "error" ? COLORS.danger : COLORS.muted;
+
+  const label =
+    syncState === "saving" ? "Syncing" : syncState === "ok" ? "Synced" : syncState === "error" ? "Error" : "Idle";
+
+  const title =
+    syncState === "saving"
+      ? "Saving / syncing…"
+      : syncState === "ok"
+      ? `Last sync: ${formatLastSync(lastSyncAt)}`
+      : syncState === "error"
+      ? `Error: ${syncMsg}`
+      : `Last sync: ${formatLastSync(lastSyncAt)}`;
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "10px 10px",
+        borderRadius: 14,
+        background: COLORS.card,
+        border: `1px solid ${COLORS.border}`,
+        color: COLORS.text,
+        fontSize: 12,
+        fontWeight: 800,
+      }}
+      title={title}
+    >
+      <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, opacity: 0.9 }} />
+      <span style={{ color: COLORS.muted, fontWeight: 900 }}>{label}</span>
+      <span style={{ color: COLORS.muted, fontWeight: 750, marginLeft: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {formatLastSync(lastSyncAt)}
+      </span>
+
+      <button
+        onClick={onResync}
+        style={{
+          marginLeft: "auto",
+          border: `1px solid ${COLORS.border}`,
+          background: "rgba(255,255,255,0.04)",
+          color: COLORS.text,
+          borderRadius: 999,
+          padding: "6px 10px",
+          cursor: "pointer",
+          fontSize: 12,
+          fontWeight: 900,
+        }}
+        title="Re-sync (re-fetch CSV)"
+      >
+        Re-sync
+      </button>
+    </div>
+  );
+}
+
+function TopRatedThisYear({
+  title,
+  games,
+  onPick,
+}: {
+  title: string;
+  games: Game[];
+  onPick: (g: Game) => void;
+}) {
+  return (
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+        {title}
+      </div>
+
+      {games.length ? (
+        <div
+          style={{
+            marginTop: 10,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
+            gap: 10,
+          }}
+        >
+          {games.map((g) => (
+            <button
+              key={g.igdbId || titleKey(g.title)}
+              onClick={() => onPick(g)}
+              title={`${g.title}${g.myRating ? ` • My Rating: ${g.myRating}` : ""}`}
+              style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", textAlign: "left" }}
+            >
+              <div
+                style={{
+                  aspectRatio: "2 / 3",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.card,
+                  boxShadow: "0 14px 34px rgba(0,0,0,.55)",
+                }}
+              >
+                {g.coverUrl ? (
+                  <img src={g.coverUrl} alt={g.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                ) : (
+                  <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 11 }}>
+                    No cover
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 11, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {Number.isFinite(Number(norm(g.myRating))) ? `★ ${norm(g.myRating)}` : "—"}
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12 }}>No rated games found for this year in the current view.</div>
+      )}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const csvUrl = process.env.NEXT_PUBLIC_SHEET_CSV_URL;
 
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tileSize, setTileSize] = useState(120); // desktop default
+  const [tileSize, setTileSize] = useState(120);
   const [isMobile, setIsMobile] = useState(false);
 
   const [q, setQ] = useState("");
@@ -955,13 +971,9 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<
-    "games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats"
-  >("games");
+  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">("games");
 
-  const [sortBy, setSortBy] = useState<
-    "title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder"
-  >("releaseDate");
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -972,7 +984,6 @@ export default function HomePage() {
   const [openGenres, setOpenGenres] = useState(false);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
-
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
   // Drag/drop edit mode + syncing indicator
@@ -981,7 +992,6 @@ export default function HomePage() {
   const [syncMsg, setSyncMsg] = useState<string>("");
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
 
-  // Used to force CSV re-fetch
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const sensors = useSensors(
@@ -992,13 +1002,11 @@ export default function HomePage() {
   // Mobile sizing
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 900px)");
-
     const apply = () => {
       const m = mq.matches;
       setIsMobile(m);
       setTileSize(m ? 100 : 120);
     };
-
     apply();
     const onChange = () => apply();
 
@@ -1035,7 +1043,6 @@ export default function HomePage() {
     }
   }
 
-  // Initial load + reload on refreshNonce
   useEffect(() => {
     fetchCsvNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1052,11 +1059,8 @@ export default function HomePage() {
     } else if (activeTab === "completed") {
       setSortBy("dateCompleted");
       setSortDir("desc");
-    } else {
-      // Keep current sort for other tabs; do nothing.
     }
 
-    // Edit mode only makes sense on queued/wishlist
     if (activeTab !== "queued" && activeTab !== "wishlist") {
       setEditMode(false);
     }
@@ -1092,14 +1096,11 @@ export default function HomePage() {
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
-      // Top tabs
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
       if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
       if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
       if (activeTab === "completed" && !toBool(g.completed)) return false;
-      // Stats tab does NOT add extra filter; it just changes the view
 
-      // Facets
       if (selectedStatus && g.status !== selectedStatus) return false;
       if (selectedOwnership && g.ownership !== selectedOwnership) return false;
       if (selectedFormat && g.format !== selectedFormat) return false;
@@ -1109,13 +1110,11 @@ export default function HomePage() {
         if (!set.has(selectedPlatform.toLowerCase())) return false;
       }
 
-      // Genres = AND
       if (selectedGenres.length) {
         const set = new Set(g.genres.map((x) => x.toLowerCase()));
         for (const sg of selectedGenres) if (!set.has(sg.toLowerCase())) return false;
       }
 
-      // Years Played = OR
       if (selectedYearsPlayed.length) {
         const set = new Set(g.yearPlayed.map((x) => x.toLowerCase()));
         const any = selectedYearsPlayed.some((y) => set.has(y.toLowerCase()));
@@ -1125,11 +1124,9 @@ export default function HomePage() {
       return true;
     });
 
-    // Sorting
     const dir = sortDir === "asc" ? 1 : -1;
 
     return base.sort((a, b) => {
-      // queued/wishlist special: order first, then newest release
       if (sortBy === "queuedOrder") {
         return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
       }
@@ -1158,7 +1155,6 @@ export default function HomePage() {
     sortDir,
   ]);
 
-  // Facet counts (respect current filtered result set for a simple “counts in view” model)
   const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
   const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
   const ownershipCounts = useMemo(() => countByKey(filtered, (g) => g.ownership), [filtered]);
@@ -1193,7 +1189,7 @@ export default function HomePage() {
 
   const topRightCount = filtered.length;
 
-  // Drag list ids (use IGDB_ID when possible, fallback to titleKey)
+  // Drag list ids
   const dragIds = useMemo(() => {
     return filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`));
   }, [filtered]);
@@ -1209,43 +1205,28 @@ export default function HomePage() {
 
   const reorderAllowed = editMode && (activeTab === "queued" || activeTab === "wishlist");
 
-  function formatLastSync(ts: number | null) {
-    if (!ts) return "—";
-    try {
-      return new Date(ts).toLocaleString();
-    } catch {
-      return "—";
-    }
-  }
-
   async function saveOrderToSheet(nextIds: string[]) {
     const orderType = activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
     if (!orderType) return;
 
-    // Only send real IGDB ids
     const orderedIgdbIds = nextIds
       .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
       .filter(Boolean);
 
-    if (!orderedIgdbIds.length) {
-      throw new Error("No IGDB_ID values found to save order.");
-    }
+    if (!orderedIgdbIds.length) throw new Error("No IGDB_ID values found to save order.");
 
     const res = await fetch("/sheets/update-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        // sheetId omitted so it uses GOOGLE_SHEET_ID env
         tabName: "Web",
-        orderType, // "queued" | "wishlist"
+        orderType,
         orderedIgdbIds,
       }),
     });
 
     const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json?.ok) {
-      throw new Error(json?.error || "Order save failed.");
-    }
+    if (!res.ok || !json?.ok) throw new Error(json?.error || "Order save failed.");
   }
 
   async function handleDragEnd(e: DragEndEvent) {
@@ -1259,15 +1240,12 @@ export default function HomePage() {
     if (oldIndex < 0 || newIndex < 0) return;
 
     const next = arrayMove(dragIds, oldIndex, newIndex);
-
-    // Update local state ordering by writing order numbers into games state
     const orderType = activeTab === "queued" ? "queued" : "wishlist";
 
     const nextIgdbIds = next
       .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
       .filter(Boolean);
 
-    // Optimistic UI update: update games array order fields
     setGames((prev) => {
       const rank = new Map<string, number>();
       nextIgdbIds.forEach((igdbId, idx) => rank.set(igdbId, idx + 1));
@@ -1275,13 +1253,11 @@ export default function HomePage() {
       return prev.map((g) => {
         const r = g.igdbId ? rank.get(g.igdbId) : undefined;
         if (!r) return g;
-
         if (orderType === "queued") return { ...g, queuedOrder: String(r) };
         return { ...g, wishlistOrder: String(r) };
       });
     });
 
-    // Persist to sheet
     setSyncState("saving");
     setSyncMsg("Saving…");
     try {
@@ -1295,7 +1271,7 @@ export default function HomePage() {
     }
   }
 
-  // Stats mode data (based on *filtered*)
+  // Stats mode data (based on filtered)
   const statsData = useMemo(() => {
     const total = filtered.length;
 
@@ -1323,26 +1299,19 @@ export default function HomePage() {
     const byYearPlayed = Array.from(countByTagList(filtered, (g) => g.yearPlayed).entries())
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => {
-        // years: numeric desc
         const an = Number(a.label);
         const bn = Number(b.label);
         if (Number.isFinite(an) && Number.isFinite(bn)) return bn - an;
         return b.count - a.count || a.label.localeCompare(b.label);
       });
 
-    // “Newest release” in view
     const newest = filtered
       .slice()
       .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))
       .find((g) => Boolean(toDateNum(g.releaseDate)));
 
-    // Average IGDB rating in view (numeric only)
-    const ratings = filtered
-      .map((g) => Number(norm(g.igdbRating)))
-      .filter((n) => Number.isFinite(n));
-    const avgIgdb = ratings.length
-      ? Math.round((ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10) / 10
-      : null;
+    const ratings = filtered.map((g) => Number(norm(g.igdbRating))).filter((n) => Number.isFinite(n));
+    const avgIgdb = ratings.length ? Math.round((ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10) / 10 : null;
 
     return {
       total,
@@ -1362,86 +1331,17 @@ export default function HomePage() {
     };
   }, [filtered]);
 
-  const topRightArea = (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      {/* Sync pill */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "8px 10px",
-          borderRadius: 999,
-          background: COLORS.card,
-          border: `1px solid ${COLORS.border}`,
-          color: COLORS.text,
-          fontSize: 12,
-          fontWeight: 800,
-        }}
-        title={
-          syncState === "saving"
-            ? "Saving / syncing…"
-            : syncState === "ok"
-            ? `Last sync: ${formatLastSync(lastSyncAt)}`
-            : syncState === "error"
-            ? `Error: ${syncMsg}`
-            : `Last sync: ${formatLastSync(lastSyncAt)}`
-        }
-      >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 999,
-            background:
-              syncState === "saving"
-                ? COLORS.warn
-                : syncState === "ok"
-                ? COLORS.accent
-                : syncState === "error"
-                ? COLORS.danger
-                : COLORS.muted,
-            opacity: 0.9,
-          }}
-        />
-        <span style={{ color: COLORS.muted, fontWeight: 800 }}>
-          {syncState === "saving"
-            ? "Syncing"
-            : syncState === "ok"
-            ? "Synced"
-            : syncState === "error"
-            ? "Error"
-            : "Idle"}
-        </span>
-        <span style={{ color: COLORS.muted, fontWeight: 750 }}>
-          {lastSyncAt ? formatLastSync(lastSyncAt) : "—"}
-        </span>
-
-        <button
-          onClick={() => setRefreshNonce((n) => n + 1)}
-          style={{
-            marginLeft: 6,
-            border: `1px solid ${COLORS.border}`,
-            background: "rgba(255,255,255,0.04)",
-            color: COLORS.text,
-            borderRadius: 999,
-            padding: "6px 10px",
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 900,
-          }}
-          title="Re-sync (re-fetch CSV)"
-        >
-          Re-sync
-        </button>
-      </div>
-
-      {/* Count (number only) */}
-      <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>
-        {topRightCount}
-      </div>
-    </div>
-  );
+  // NEW: Top rated games this year (based on filtered)
+  const topRatedThisYear = useMemo(() => {
+    const y = String(new Date().getFullYear());
+    return filtered
+      .filter((g) => g.yearPlayed.includes(y))
+      .map((g) => ({ g, r: Number(norm(g.myRating)) }))
+      .filter((x) => Number.isFinite(x.r))
+      .sort((a, b) => b.r - a.r || a.g.title.localeCompare(b.g.title))
+      .slice(0, 10)
+      .map((x) => x.g);
+  }, [filtered]);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
@@ -1515,7 +1415,7 @@ export default function HomePage() {
             Close
           </button>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2 }}>
             <img
               src={headerAvatarUrl}
               alt="Chris"
@@ -1531,12 +1431,21 @@ export default function HomePage() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Chris&apos; Game Library</div>
           </div>
 
+          {/* ✅ MOVED: Sync bar under header, above search */}
+          <SyncBar
+            syncState={syncState}
+            syncMsg={syncMsg}
+            lastSyncAt={lastSyncAt}
+            onResync={() => setRefreshNonce((n) => n + 1)}
+          />
+
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search…"
             style={{
               width: "100%",
+              marginTop: 10,
               padding: "9px 10px",
               borderRadius: 12,
               border: `1px solid ${COLORS.border}`,
@@ -1550,12 +1459,7 @@ export default function HomePage() {
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>SORT</div>
 
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <SmallSelect
-                value={sortBy}
-                onChange={(v) =>
-                  setSortBy(v as any)
-                }
-              >
+              <SmallSelect value={sortBy} onChange={(v) => setSortBy(v as any)}>
                 <option value="title">Title</option>
                 <option value="releaseDate">Release Date</option>
                 <option value="dateAdded">Date Added</option>
@@ -1600,57 +1504,27 @@ export default function HomePage() {
         </div>
 
         <CollapsibleSection title="Platform" open={openPlatform} setOpen={setOpenPlatform}>
-          <FacetRowsSingle
-            options={platforms}
-            counts={platformCounts}
-            selected={selectedPlatform}
-            onSelect={setSelectedPlatform}
-          />
+          <FacetRowsSingle options={platforms} counts={platformCounts} selected={selectedPlatform} onSelect={setSelectedPlatform} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Status" open={openStatus} setOpen={setOpenStatus}>
-          <FacetRowsSingle
-            options={statuses}
-            counts={statusCounts}
-            selected={selectedStatus}
-            onSelect={setSelectedStatus}
-          />
+          <FacetRowsSingle options={statuses} counts={statusCounts} selected={selectedStatus} onSelect={setSelectedStatus} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle
-            options={ownerships}
-            counts={ownershipCounts}
-            selected={selectedOwnership}
-            onSelect={setSelectedOwnership}
-          />
+          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
-          <FacetRowsSingle
-            options={formats}
-            counts={formatCounts}
-            selected={selectedFormat}
-            onSelect={setSelectedFormat}
-          />
+          <FacetRowsSingle options={formats} counts={formatCounts} selected={selectedFormat} onSelect={setSelectedFormat} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti
-            options={allYearsPlayed}
-            counts={yearsPlayedCounts}
-            selected={selectedYearsPlayed}
-            onToggle={toggleYearPlayed}
-          />
+          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti
-            options={allGenres}
-            counts={genreCounts}
-            selected={selectedGenres}
-            onToggle={toggleGenre}
-          />
+          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
         </CollapsibleSection>
 
         <button
@@ -1671,9 +1545,7 @@ export default function HomePage() {
           Clear Filters
         </button>
 
-        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>
-          Showing {filtered.length} / {games.length}
-        </div>
+        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>Showing {filtered.length} / {games.length}</div>
       </aside>
 
       {/* Main */}
@@ -1700,28 +1572,17 @@ export default function HomePage() {
         </div>
 
         {/* Top nav + right area */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
-            gap: 16,
-            marginBottom: 14,
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
             <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
             <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
             <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
             <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
-
-            {/* NEW: Stats tab */}
             <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Edit mode toggle only relevant for queued/wishlist */}
             {(activeTab === "queued" || activeTab === "wishlist") && (
               <button
                 onClick={() => setEditMode((v) => !v)}
@@ -1741,7 +1602,8 @@ export default function HomePage() {
               </button>
             )}
 
-            {topRightArea}
+            {/* Count (number only) */}
+            <div style={{ fontSize: 16, fontWeight: 900, color: COLORS.text, opacity: 0.95 }}>{topRightCount}</div>
           </div>
         </div>
 
@@ -1751,26 +1613,14 @@ export default function HomePage() {
         ) : activeTab === "stats" ? (
           // ===== STATS MODE =====
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
               <StatCard title="Items in view" value={statsData.total} subtitle="Respects facets + search" />
               <StatCard title="Completed" value={statsData.completedInView} />
               <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
               <StatCard title="Queued" value={statsData.queuedInView} />
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
               <StatCard title="Wishlist" value={statsData.wishlistInView} />
               <StatCard
                 title="Avg IGDB rating"
@@ -1780,24 +1630,19 @@ export default function HomePage() {
               <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
+            {/* ✅ NEW SECTION */}
+            <TopRatedThisYear
+              title={`Top Rated Games This Year`}
+              games={topRatedThisYear}
+              onPick={(g) => setSelectedGame(g)}
+            />
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Top Platforms" items={statsData.byPlatform} />
               <TopList title="Top Genres" items={statsData.byGenre} />
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Status Breakdown" items={statsData.byStatus} />
               <TopList title="Ownership Breakdown" items={statsData.byOwnership} />
             </div>
@@ -1810,19 +1655,9 @@ export default function HomePage() {
           </div>
         ) : (
           // ===== COVERS MODE (with optional drag/drop) =====
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={dragIds} strategy={rectSortingStrategy}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
-                  gap: 12,
-                }}
-              >
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`, gap: 12 }}>
                 {dragIds.map((id) => {
                   const g = idToGame.get(id);
                   if (!g) return null;
@@ -1833,7 +1668,6 @@ export default function HomePage() {
                       id={id}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      tileSize={tileSize}
                       disabled={!reorderAllowed}
                       onClick={() => setSelectedGame(g)}
                     />
@@ -1917,24 +1751,14 @@ export default function HomePage() {
                       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                     />
                   ) : (
-                    <div
-                      style={{
-                        height: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: COLORS.muted,
-                      }}
-                    >
+                    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
                       No cover
                     </div>
                   )}
                 </div>
 
                 <div style={{ marginTop: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>
-                    {selectedGame.title}
-                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>{selectedGame.title}</div>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {selectedGame.platform.slice(0, 6).map((p) => (
@@ -1953,7 +1777,6 @@ export default function HomePage() {
 
               {/* Right: screenshot + info */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                {/* Screenshot full width */}
                 {selectedGame.screenshotUrl ? (
                   <div
                     style={{
@@ -1973,7 +1796,6 @@ export default function HomePage() {
                   </div>
                 ) : null}
 
-                {/* Info grid: 2 columns */}
                 <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Field label="Release Date" value={selectedGame.releaseDate} />
                   <Field label="Year Played" value={selectedGame.yearPlayed.join(", ")} />
@@ -1988,16 +1810,11 @@ export default function HomePage() {
                   <Field label="Date Completed" value={selectedGame.dateCompleted} />
                 </div>
 
-                {/* Description full width */}
                 <div style={{ marginTop: 10 }}>
                   <Field
                     label="Description"
                     value={
-                      selectedGame.description ? (
-                        <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div>
-                      ) : (
-                        ""
-                      )
+                      selectedGame.description ? <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div> : ""
                     }
                   />
                 </div>
