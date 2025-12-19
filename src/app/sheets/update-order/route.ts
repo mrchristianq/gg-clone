@@ -1,6 +1,20 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
+import { NextResponse } from "next/server";
 
+export async function GET() {
+  const has = (k: string) => Boolean(process.env[k] && String(process.env[k]).trim().length);
+
+  return NextResponse.json({
+    ok: true,
+    env: {
+      GOOGLE_SHEET_ID: has("GOOGLE_SHEET_ID"),
+      GOOGLE_PROJECT_ID: has("GOOGLE_PROJECT_ID"),
+      GOOGLE_CLIENT_EMAIL: has("GOOGLE_CLIENT_EMAIL"),
+      GOOGLE_PRIVATE_KEY: has("GOOGLE_PRIVATE_KEY"),
+    },
+  });
+}
 // Service account scopes (Sheets)
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
