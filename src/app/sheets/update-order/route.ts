@@ -1,116 +1,138 @@
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-const SHEET_ID = process.env.GOOGLE_SHEET_ID; // put your spreadsheet ID in Vercel env
-const SHEET_TAB = "Web"; // your tab name
 
 function mustEnv(name: string) {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
+  if (!v) throw new Error(`Missing environment variable: ${name}`);
   return v;
 }
 
-function colToA1(colIndex1Based: number) {
-  let n = colIndex1Based;
-  let s = "";
-  while (n > 0) {
-    const r = (n - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
-}
-
-async function getSheetsClient() {
+function getAuth() {
+  const projectId = mustEnv("GOOGLE_PROJECT_ID");
   const clientEmail = mustEnv("GOOGLE_CLIENT_EMAIL");
-  const privateKey = mustEnv("GOOGLE_PRIVATE_KEY").replace(/\\n/g, "\n");
+  const privateKeyRaw = mustEnv("GOOGLE_PRIVATE_KEY");
+  const privateKey = privateKeyRaw.replace(/\\n/g, "\n");
 
-  const auth = new google.auth.JWT({
+  return new google.auth.JWT({
     email: clientEmail,
     key: privateKey,
     scopes: SCOPES,
+    projectId,
   });
-
-  return google.sheets({ version: "v4", auth });
 }
 
-type Body = {
-  orderColumn: "QueuedOrder" | "WishlistOrder";
-  items: { igdbId: string; order: number }[];
-};
-
+/**
+ * Body expected:
+ * {
+ *   sheetId: "your spreadsheet id",
+ *   tabName: "Web",
+ *   mode: "queued" | "wishlist",
+ *   items: [{ igdbId: "123", order: 1 }, ...]
+ * }
+ */
 export async function POST(req: Request) {
   try {
-    if (!SHEET_ID) throw new Error("Missing env var: GOOGLE_SHEET_ID");
+    const body = await req.json();
 
-    const body = (await req.json()) as Body;
+    const sheetId: string = body.sheetId;
+    const tabName: string = body.tabName || "Web";
+    const mode: "queued" | "wishlist" = body.mode;
+    const items: { igdbId: string; order: number }[] = body.items;
 
-    if (!body?.orderColumn || !Array.isArray(body.items)) {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-    }
+    if (!sheetId) throw new Error("Missing body.sheetId");
+    if (!mode) throw new Error("Missing body.mode");
+    if (!Array.isArray(items) || items.length === 0) throw new Error("Missing body.items");
 
-    const sheets = await getSheetsClient();
+    // Columns we update based on mode
+    const orderHeader = mode === "queued" ? "QueuedOrder" : "WishlistOrder";
+    const idHeader = "IGDB_ID";
 
-    // 1) Read header row to find column indexes
+    const auth = getAuth();
+    const sheets = google.sheets({ version: "v4", auth });
+
+    // Pull header row + IGDB_ID column + order column (we’ll find column indexes by header name)
     const headerRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: `${SHEET_TAB}!1:1`,
+      spreadsheetId: sheetId,
+      range: `${tabName}!1:1`,
     });
 
-    const headers = (headerRes.data.values?.[0] ?? []).map((x) => String(x).trim());
-    const igdbCol = headers.indexOf("IGDB_ID") + 1;
-    const orderCol = headers.indexOf(body.orderColumn) + 1;
+    const headers = (headerRes.data.values?.[0] || []).map((x) => String(x).trim());
+    const idColIdx = headers.indexOf(idHeader);
+    const orderColIdx = headers.indexOf(orderHeader);
 
-    if (igdbCol <= 0) throw new Error(`Header not found: IGDB_ID`);
-    if (orderCol <= 0) throw new Error(`Header not found: ${body.orderColumn}`);
+    if (idColIdx === -1) throw new Error(`Header not found: ${idHeader}`);
+    if (orderColIdx === -1) throw new Error(`Header not found: ${orderHeader}`);
 
-    // 2) Read IGDB_ID column for all rows so we can map id -> row number
-    const igdbColA1 = colToA1(igdbCol);
-    const igdbIdsRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: `${SHEET_TAB}!${igdbColA1}:${igdbColA1}`,
+    // Fetch all rows for mapping IGDB_ID -> row number
+    const allRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `${tabName}!A2:ZZ`,
     });
 
-    const igdbColValues = igdbIdsRes.data.values ?? [];
-    // Row 1 is header; data starts at row 2
-    const idToRow = new Map<string, number>();
-    for (let r = 2; r <= igdbColValues.length; r++) {
-      const val = String(igdbColValues[r - 1]?.[0] ?? "").trim();
-      if (val) idToRow.set(val, r);
+    const rows = allRes.data.values || [];
+    // Map IGDB_ID -> sheet row number (2-based because A2 is row 2)
+    const idToRowNum = new Map<string, number>();
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const idVal = String(row[idColIdx] || "").trim();
+      if (idVal) idToRowNum.set(idVal, i + 2);
     }
 
-    // 3) Build batch update ranges for order column
-    const orderColA1 = colToA1(orderCol);
+    // Prepare batch updates
+    const data: { range: string; values: (string | number)[][] }[] = [];
 
-    const data = body.items
-      .map((it) => {
-        const row = idToRow.get(String(it.igdbId).trim());
-        if (!row) return null;
-        return {
-          range: `${SHEET_TAB}!${orderColA1}${row}`,
-          values: [[it.order]],
-        };
-      })
-      .filter(Boolean) as { range: string; values: (string | number)[][] }[];
+    for (const it of items) {
+      const igdbId = String(it.igdbId || "").trim();
+      if (!igdbId) continue;
 
-    if (!data.length) {
-      return NextResponse.json({ ok: true, updated: 0 });
+      const rowNum = idToRowNum.get(igdbId);
+      if (!rowNum) continue;
+
+      // Convert column index -> A1 letter
+      const colLetter = columnNumberToLetter(orderColIdx + 1);
+      data.push({
+        range: `${tabName}!${colLetter}${rowNum}`,
+        values: [[it.order]],
+      });
+    }
+
+    if (data.length === 0) {
+      return NextResponse.json(
+        { ok: true, updated: 0, message: "No matching IGDB_ID rows found to update." },
+        { status: 200 }
+      );
     }
 
     await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: sheetId,
       requestBody: {
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         data,
       },
     });
 
-    return NextResponse.json({ ok: true, updated: data.length });
-  } catch (e: any) {
+    return NextResponse.json({ ok: true, updated: data.length }, { status: 200 });
+  } catch (err: any) {
+    // This makes the actual reason visible in Vercel logs and optionally in the response
+    console.error("update-order error:", err?.message || err, err);
     return NextResponse.json(
-      { error: e?.message ?? "Unknown error" },
+      { ok: false, error: String(err?.message || err) },
       { status: 500 }
     );
   }
+}
+
+function columnNumberToLetter(n: number) {
+  let s = "";
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
 }
