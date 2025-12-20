@@ -2,10 +2,15 @@
    Chris' Game Library
    Version: 2.1.5
    Notes:
-   - NEW: Rating badge overlays ONLY in:
-       1) Completed tab (on the cover tiles)
-       2) Stats → “Top Rated Games This Year” row
-   - KEEP: Everything else exactly as-is (sync bar under avatar, drag/drop edit mode, etc.)
+   - KEEP: Sync indicator + Re-sync in LEFT sidebar under avatar
+   - KEEP: Facets affect stats (stats uses the SAME filtered dataset)
+   - KEEP: Drag + drop reorder for Queued + Wishlist (Edit Mode toggle), writes to Sheets API route
+   - KEEP: Modal game detail view (cover/tags left; screenshot + fields right; 2-col info; desc full width)
+   - KEEP: Desktop tile default = 120, mobile default = 100
+   - CHANGE (requested): Show rating badge ONLY in:
+       1) Completed view tiles
+       2) “Top Rated Games This Year” row in Stats
+     Badge is smaller, darker “glass”, and tighter to top-right corner.
 ===================================================================================== */
 
 "use client";
@@ -668,40 +673,38 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   return toDateNum(bRel) - toDateNum(aRel);
 }
 
-/** Small, blended rating badge (used only in Completed tab + Stats Top Rated row) */
-function RatingBadge({ rating }: { rating: string }) {
-  const n = Number(norm(rating));
-  if (!Number.isFinite(n)) return null;
-
-  const text = Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+function ScoreBadge({ score }: { score: number }) {
+  const s = Number.isFinite(score) ? Math.round(score) : NaN;
+  if (!Number.isFinite(s)) return null;
 
   return (
     <div
       style={{
         position: "absolute",
-        top: 10,
-        right: 10,
-        height: 28,
-        padding: "0 10px",
-        borderRadius: 999,
+        top: 6,
+        right: 6,
         display: "inline-flex",
         alignItems: "center",
-        justifyContent: "center",
-        gap: 6,
-        background: "rgba(255,255,255,0.72)",
-        border: "1px solid rgba(0,0,0,0.10)",
-        boxShadow: "0 10px 22px rgba(0,0,0,.25)",
-        color: "#111827",
-        fontSize: 12,
+        gap: 5,
+        padding: "3px 7px",
+        borderRadius: 999,
+        background: "rgba(0,0,0,0.55)",
+        border: "1px solid rgba(255,255,255,0.14)",
+        color: "rgba(229,231,235,0.92)",
+        fontSize: 11,
         fontWeight: 900,
-        lineHeight: "28px",
+        lineHeight: "14px",
+        letterSpacing: "0.01em",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        boxShadow: "0 10px 25px rgba(0,0,0,0.45)",
         pointerEvents: "none",
-        backdropFilter: "blur(6px)",
-        WebkitBackdropFilter: "blur(6px)",
       }}
     >
-      <span style={{ fontSize: 12, lineHeight: 1, marginTop: -1 }}>★</span>
-      <span>{text}</span>
+      <span aria-hidden style={{ fontSize: 11, opacity: 0.95 }}>
+        ★
+      </span>
+      <span>{s}</span>
     </div>
   );
 }
@@ -712,8 +715,8 @@ function SortableTile({
   coverUrl,
   disabled,
   onClick,
-  showRatingBadge,
-  rating,
+  showScore,
+  score,
 }: {
   id: string;
   title: string;
@@ -721,8 +724,8 @@ function SortableTile({
   tileSize: number;
   disabled: boolean;
   onClick: () => void;
-  showRatingBadge: boolean;
-  rating: string;
+  showScore?: boolean;
+  score?: number;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -761,6 +764,8 @@ function SortableTile({
             boxShadow: "0 20px 40px rgba(0,0,0,.6)",
           }}
         >
+          {showScore && Number.isFinite(score ?? NaN) ? <ScoreBadge score={score as number} /> : null}
+
           {coverUrl ? (
             <img
               src={coverUrl}
@@ -785,8 +790,6 @@ function SortableTile({
               No cover
             </div>
           )}
-
-          {showRatingBadge ? <RatingBadge rating={rating} /> : null}
         </div>
       </button>
     </div>
@@ -832,7 +835,17 @@ function TopList({
             const pct = top ? Math.max(0.08, x.count / top) : 0.08;
             return (
               <div key={x.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 110, color: COLORS.text, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div
+                  style={{
+                    width: 110,
+                    color: COLORS.text,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
                   {x.label}
                 </div>
 
@@ -869,7 +882,7 @@ function TopRatedRow({
   items,
 }: {
   title: string;
-  items: Array<{ title: string; coverUrl: string; rating: string; onClick: () => void }>;
+  items: Array<{ title: string; coverUrl: string; score: number; onClick: () => void }>;
 }) {
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
@@ -885,7 +898,6 @@ function TopRatedRow({
               onClick={g.onClick}
               title={g.title}
               style={{
-                position: "relative",
                 flex: "1 1 0",
                 minWidth: 0,
                 border: `1px solid ${COLORS.border}`,
@@ -896,8 +908,12 @@ function TopRatedRow({
                 cursor: "pointer",
                 boxShadow: "0 18px 45px rgba(0,0,0,.45)",
                 aspectRatio: "2 / 3",
+                position: "relative",
               }}
             >
+              {/* ✅ Rating badge ONLY here (Top Rated row) */}
+              <ScoreBadge score={g.score} />
+
               {g.coverUrl ? (
                 <img
                   src={g.coverUrl}
@@ -910,9 +926,6 @@ function TopRatedRow({
                   No cover
                 </div>
               )}
-
-              {/* Badge ONLY in this Top Rated row */}
-              <RatingBadge rating={g.rating} />
             </button>
           ))
         ) : (
@@ -946,9 +959,9 @@ export default function HomePage() {
     "games"
   );
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">(
-    "releaseDate"
-  );
+  const [sortBy, setSortBy] = useState<
+    "title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder"
+  >("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -1101,8 +1114,10 @@ export default function HomePage() {
     const dir = sortDir === "asc" ? 1 : -1;
 
     return base.sort((a, b) => {
-      if (sortBy === "queuedOrder") return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
-      if (sortBy === "wishlistOrder") return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
+      if (sortBy === "queuedOrder")
+        return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
+      if (sortBy === "wishlistOrder")
+        return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
 
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
       if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
@@ -1159,7 +1174,10 @@ export default function HomePage() {
 
   const topRightCount = filtered.length;
 
-  const dragIds = useMemo(() => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)), [filtered]);
+  const dragIds = useMemo(
+    () => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)),
+    [filtered]
+  );
 
   const idToGame = useMemo(() => {
     const m = new Map<string, Game>();
@@ -1293,9 +1311,13 @@ export default function HomePage() {
       .filter((g) => g.yearPlayed.includes(thisYear))
       .map((g) => ({ g, r: Number(norm(g.myRating)) }))
       .filter((x) => Number.isFinite(x.r))
-      .sort((a, b) => b.r - a.r || toDateNum(b.g.releaseDate) - toDateNum(a.g.releaseDate) || a.g.title.localeCompare(b.g.title))
-      .slice(0, 5)
-      .map((x) => x.g);
+      .sort(
+        (a, b) =>
+          b.r - a.r ||
+          toDateNum(b.g.releaseDate) - toDateNum(a.g.releaseDate) ||
+          a.g.title.localeCompare(b.g.title)
+      )
+      .slice(0, 5);
 
     return {
       total,
@@ -1312,7 +1334,7 @@ export default function HomePage() {
       newestDate: newest?.releaseDate || "—",
       avgIgdb,
       ratedCount: ratings.length,
-      topRatedThisYear,
+      topRatedThisYear, // { g, r }
     };
   }, [filtered]);
 
@@ -1359,7 +1381,17 @@ export default function HomePage() {
               </div>
             </div>
             {syncState === "error" && syncMsg ? (
-              <div style={{ color: COLORS.danger, fontSize: 11, fontWeight: 800, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div
+                style={{
+                  color: COLORS.danger,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  marginTop: 4,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
                 {syncMsg}
               </div>
             ) : null}
@@ -1408,6 +1440,9 @@ export default function HomePage() {
       {topRightCount}
     </div>
   );
+
+  // ✅ Only show rating badge in Completed grid
+  const showCompletedBadges = activeTab === "completed";
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
@@ -1483,6 +1518,7 @@ export default function HomePage() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Chris&apos; Game Library</div>
           </div>
 
+          {/* ✅ Sync bar under avatar */}
           <SyncBar />
 
           <input
@@ -1537,7 +1573,14 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>COVER SIZE</div>
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
-            <input type="range" min={90} max={260} value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: "100%" }} />
+            <input
+              type="range"
+              min={90}
+              max={260}
+              value={tileSize}
+              onChange={(e) => setTileSize(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
           </div>
         </div>
 
@@ -1583,8 +1626,11 @@ export default function HomePage() {
           Clear Filters
         </button>
 
-        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>Showing {filtered.length} / {games.length}</div>
+        <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>
+          Showing {filtered.length} / {games.length}
+        </div>
 
+        {/* ✅ Version marker */}
         <div style={{ marginTop: 18, fontSize: 11, color: COLORS.muted, opacity: 0.8 }}>Version {VERSION}</div>
       </aside>
 
@@ -1677,12 +1723,13 @@ export default function HomePage() {
               <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
             </div>
 
+            {/* ✅ Top Rated row (cap 5, evenly spaced) WITH rating badge */}
             <TopRatedRow
               title="Top Rated Games This Year"
-              items={statsData.topRatedThisYear.map((g) => ({
+              items={statsData.topRatedThisYear.map(({ g, r }) => ({
                 title: g.title,
                 coverUrl: g.coverUrl,
-                rating: g.myRating,
+                score: r,
                 onClick: () => setSelectedGame(g),
               }))}
             />
@@ -1702,12 +1749,6 @@ export default function HomePage() {
             <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
               Tip: Use Platform/Genre/Year facets + search, then jump to Stats to see the breakdown of that slice.
             </div>
-
-            <style>{`
-              @media (max-width: 900px) {
-                .statsGrid4 { grid-template-columns: 1fr !important; }
-              }
-            `}</style>
           </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1717,8 +1758,8 @@ export default function HomePage() {
                   const g = idToGame.get(id);
                   if (!g) return null;
 
-                  const showRatingBadge =
-                    activeTab === "completed" && toBool(g.completed) && Number.isFinite(Number(norm(g.myRating)));
+                  const score = Number(norm(g.myRating));
+                  const showScore = showCompletedBadges && Number.isFinite(score);
 
                   return (
                     <SortableTile
@@ -1729,8 +1770,8 @@ export default function HomePage() {
                       tileSize={tileSize}
                       disabled={!reorderAllowed}
                       onClick={() => setSelectedGame(g)}
-                      showRatingBadge={showRatingBadge}
-                      rating={g.myRating}
+                      showScore={showScore}
+                      score={score}
                     />
                   );
                 })}
@@ -1804,7 +1845,11 @@ export default function HomePage() {
                   }}
                 >
                   {selectedGame.coverUrl ? (
-                    <img src={selectedGame.coverUrl} alt={selectedGame.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    <img
+                      src={selectedGame.coverUrl}
+                      alt={selectedGame.title}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
                   ) : (
                     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
                       No cover
@@ -1866,7 +1911,9 @@ export default function HomePage() {
                 <div style={{ marginTop: 10 }}>
                   <Field
                     label="Description"
-                    value={selectedGame.description ? <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div> : ""}
+                    value={
+                      selectedGame.description ? <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div> : ""
+                    }
                   />
                 </div>
               </div>
