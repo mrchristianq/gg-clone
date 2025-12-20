@@ -1180,7 +1180,10 @@ export default function HomePage() {
 
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
-
+       
+      // ✅ Exclude Wishlist games from the primary Games tab
+      if (activeTab === "games" && norm(g.ownership) === "Wishlist") return false;
+       
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
       if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
       if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
