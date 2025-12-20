@@ -1,13 +1,11 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.1.4
+   Version: 2.1.5
    Notes:
-   - RESTORED: “Top Rated Games This Year” in Stats view (capped at 5 covers, evenly spaced)
-   - KEEP: Stats top tab + sync indicator + Re-sync in LEFT sidebar under avatar
-   - KEEP: Facets affect stats (stats uses the SAME filtered dataset)
-   - KEEP: Drag + drop reorder for Queued + Wishlist (Edit Mode toggle), writes to Sheets API route
-   - KEEP: Modal game detail view (cover/tags left; screenshot + fields right; 2-col info; desc full width)
-   - KEEP: Desktop tile default = 120, mobile default = 100
+   - NEW: Rating badge overlays ONLY in:
+       1) Completed tab (on the cover tiles)
+       2) Stats → “Top Rated Games This Year” row
+   - KEEP: Everything else exactly as-is (sync bar under avatar, drag/drop edit mode, etc.)
 ===================================================================================== */
 
 "use client";
@@ -61,7 +59,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "2.1.4";
+const VERSION = "2.1.5";
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -670,12 +668,52 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   return toDateNum(bRel) - toDateNum(aRel);
 }
 
+/** Small, blended rating badge (used only in Completed tab + Stats Top Rated row) */
+function RatingBadge({ rating }: { rating: string }) {
+  const n = Number(norm(rating));
+  if (!Number.isFinite(n)) return null;
+
+  const text = Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 10,
+        right: 10,
+        height: 28,
+        padding: "0 10px",
+        borderRadius: 999,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+        background: "rgba(255,255,255,0.72)",
+        border: "1px solid rgba(0,0,0,0.10)",
+        boxShadow: "0 10px 22px rgba(0,0,0,.25)",
+        color: "#111827",
+        fontSize: 12,
+        fontWeight: 900,
+        lineHeight: "28px",
+        pointerEvents: "none",
+        backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
+      }}
+    >
+      <span style={{ fontSize: 12, lineHeight: 1, marginTop: -1 }}>★</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
 function SortableTile({
   id,
   title,
   coverUrl,
   disabled,
   onClick,
+  showRatingBadge,
+  rating,
 }: {
   id: string;
   title: string;
@@ -683,6 +721,8 @@ function SortableTile({
   tileSize: number;
   disabled: boolean;
   onClick: () => void;
+  showRatingBadge: boolean;
+  rating: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -713,6 +753,7 @@ function SortableTile({
       >
         <div
           style={{
+            position: "relative",
             aspectRatio: "2 / 3",
             background: COLORS.card,
             borderRadius: 14,
@@ -731,10 +772,21 @@ function SortableTile({
               }}
             />
           ) : (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: COLORS.muted,
+                fontSize: 12,
+              }}
+            >
               No cover
             </div>
           )}
+
+          {showRatingBadge ? <RatingBadge rating={rating} /> : null}
         </div>
       </button>
     </div>
@@ -817,7 +869,7 @@ function TopRatedRow({
   items,
 }: {
   title: string;
-  items: Array<{ title: string; coverUrl: string; onClick: () => void }>;
+  items: Array<{ title: string; coverUrl: string; rating: string; onClick: () => void }>;
 }) {
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
@@ -833,6 +885,7 @@ function TopRatedRow({
               onClick={g.onClick}
               title={g.title}
               style={{
+                position: "relative",
                 flex: "1 1 0",
                 minWidth: 0,
                 border: `1px solid ${COLORS.border}`,
@@ -857,6 +910,9 @@ function TopRatedRow({
                   No cover
                 </div>
               )}
+
+              {/* Badge ONLY in this Top Rated row */}
+              <RatingBadge rating={g.rating} />
             </button>
           ))
         ) : (
@@ -1232,7 +1288,6 @@ export default function HomePage() {
     const ratings = filtered.map((g) => Number(norm(g.igdbRating))).filter((n) => Number.isFinite(n));
     const avgIgdb = ratings.length ? Math.round((ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10) / 10 : null;
 
-    // ✅ RESTORED: Top Rated Games This Year (cap 5)
     const thisYear = String(new Date().getFullYear());
     const topRatedThisYear = filtered
       .filter((g) => g.yearPlayed.includes(thisYear))
@@ -1428,7 +1483,6 @@ export default function HomePage() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Chris&apos; Game Library</div>
           </div>
 
-          {/* ✅ Sync bar under avatar */}
           <SyncBar />
 
           <input
@@ -1531,7 +1585,6 @@ export default function HomePage() {
 
         <div style={{ marginTop: 10, fontSize: 11, color: COLORS.muted }}>Showing {filtered.length} / {games.length}</div>
 
-        {/* ✅ Version marker */}
         <div style={{ marginTop: 18, fontSize: 11, color: COLORS.muted, opacity: 0.8 }}>Version {VERSION}</div>
       </aside>
 
@@ -1624,12 +1677,12 @@ export default function HomePage() {
               <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
             </div>
 
-            {/* ✅ RESTORED Top Rated row (cap 5, evenly spaced) */}
             <TopRatedRow
               title="Top Rated Games This Year"
               items={statsData.topRatedThisYear.map((g) => ({
                 title: g.title,
                 coverUrl: g.coverUrl,
+                rating: g.myRating,
                 onClick: () => setSelectedGame(g),
               }))}
             />
@@ -1664,6 +1717,9 @@ export default function HomePage() {
                   const g = idToGame.get(id);
                   if (!g) return null;
 
+                  const showRatingBadge =
+                    activeTab === "completed" && toBool(g.completed) && Number.isFinite(Number(norm(g.myRating)));
+
                   return (
                     <SortableTile
                       key={id}
@@ -1673,6 +1729,8 @@ export default function HomePage() {
                       tileSize={tileSize}
                       disabled={!reorderAllowed}
                       onClick={() => setSelectedGame(g)}
+                      showRatingBadge={showRatingBadge}
+                      rating={g.myRating}
                     />
                   );
                 })}
