@@ -1804,7 +1804,7 @@ export default function HomePage() {
                 gap: 12,
               }}
             >
-              <StatCard title="Wishlist" value={statsData.wishlistInView} />
+              <StatCard title="Wishlist" value={wishlistTotal} />
               <StatCard
                 title="Average IGDB Rating vs My Avg Rating"
                 value={
