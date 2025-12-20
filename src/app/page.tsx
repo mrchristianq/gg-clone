@@ -1246,7 +1246,7 @@ export default function HomePage() {
   const yearsPlayedCounts = useMemo(() => countByTagList(filtered, (g) => g.yearPlayed), [filtered]);
   const genreCounts = useMemo(() => countByTagList(filtered, (g) => g.genres), [filtered]);
 
-  const gamesTotal = games.length;
+  const gamesTotal = games.filter((g) => norm(g.ownership) !== "Wishlist").length;
   const year = new Date().getFullYear();
   const inYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
   const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
