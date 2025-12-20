@@ -1,18 +1,21 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.1.6
+   Version: 2.2.0
    Notes:
-   - Rating overlay (smaller, darker glass, tucked into top-right) shows ONLY:
-       ✅ Completed tab tiles
-       ✅ “Top Rated Games This Year” row in Stats
-   - My Rating supports decimals (e.g. 9.5, 8.0) and displays with 1 decimal.
-   - Wishlist ownership items are excluded from:
-       ✅ Games tab
-       ✅ Status-based tabs (Now Playing / Completed)
-       ✅ Stats view + facet counts while in those views
-     …but they still appear in:
-       ✅ Wishlist tab
-       ✅ Queued tab (if they’re queued / planned)
+   - Rating bubble:
+     • Only shows in Completed view + “Top Rated Games This Year”
+     • Hidden if no My Rating
+     • Shows one decimal (9.5, 8.0, etc) BUT if rating is 10 → show “10” (no decimal)
+     • Smaller + darker “glass”, tighter to top-right
+   - Wishlist rule:
+     • If Ownership = "Wishlist", it will NOT appear in Games / Now Playing / Completed / Stats (and not in Status facet data)
+     • It WILL appear in Wishlist tab, and can appear in Queued tab if Status = "Queued"
+   - Modal:
+     • Adds 5-star display next to IGDB Rating + My Rating
+     • Stars are based on /10 mapped to /5 and snapped DOWN to nearest half-star (matches your examples)
+   - Stats:
+     • Replaces “Avg IGDB rating” with “Average IGDB Rating vs My Avg Rating”
+     • Uses current calendar year (Year Played = this year) within the current filtered slice
 ===================================================================================== */
 
 "use client";
@@ -66,7 +69,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "2.1.6";
+const VERSION = "2.2.0";
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -286,6 +289,22 @@ function countByTagList(base: Game[], getTags: (g: Game) => string[]) {
     }
   }
   return map;
+}
+
+/** Rating formatting: show one decimal ALWAYS (8.0), except 10 => "10" */
+function formatMyRatingText(raw: string) {
+  const n = Number(norm(raw));
+  if (!Number.isFinite(n)) return "";
+  if (n >= 10) return "10";
+  return n.toFixed(1);
+}
+
+/** Converts /10 rating to /5 stars, snapping DOWN to nearest half-star (matches examples). */
+function ratingToStarsDownToHalf(raw: string) {
+  const n = Number(norm(raw));
+  if (!Number.isFinite(n)) return NaN;
+  const stars = n / 2; // 10 -> 5
+  return Math.floor(stars * 2) / 2; // down to nearest 0.5
 }
 
 function CountBadge({ n }: { n: number }) {
@@ -675,30 +694,79 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   return toDateNum(bRel) - toDateNum(aRel);
 }
 
-function RatingBadge({ value }: { value: string }) {
+function RatingBubble({ text }: { text: string }) {
   return (
     <div
       style={{
         position: "absolute",
         top: 6,
         right: 6,
-        padding: "3px 6px",
+        padding: "4px 7px",
         borderRadius: 999,
-        background: "rgba(0,0,0,0.55)",
+        background: "rgba(10,12,18,0.72)",
         border: "1px solid rgba(255,255,255,0.10)",
-        color: "rgba(255,255,255,0.90)",
+        color: "rgba(255,255,255,0.92)",
         fontSize: 11,
-        fontWeight: 900,
-        lineHeight: "14px",
-        letterSpacing: "0.02em",
-        backdropFilter: "blur(6px)",
-        WebkitBackdropFilter: "blur(6px)",
+        fontWeight: 950,
+        lineHeight: 1,
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
         boxShadow: "0 10px 26px rgba(0,0,0,.55)",
         pointerEvents: "none",
+        letterSpacing: "0.01em",
       }}
     >
-      {value}
+      {text}
     </div>
+  );
+}
+
+function StarRating({ outOf10 }: { outOf10: string }) {
+  const s = ratingToStarsDownToHalf(outOf10);
+  if (!Number.isFinite(s)) return <span style={{ color: COLORS.muted }}>—</span>;
+
+  const full = Math.floor(s);
+  const half = s - full >= 0.5;
+
+  const Star = ({ fillPct }: { fillPct: 0 | 50 | 100 }) => (
+    <span
+      style={{
+        position: "relative",
+        display: "inline-block",
+        width: 14,
+        height: 14,
+        fontSize: 14,
+        lineHeight: "14px",
+      }}
+      aria-hidden
+    >
+      {/* base */}
+      <span style={{ color: "rgba(255,255,255,0.20)" }}>★</span>
+      {/* fill */}
+      <span
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: fillPct === 100 ? "100%" : fillPct === 50 ? "50%" : "0%",
+          overflow: "hidden",
+          color: "rgba(255,255,255,0.78)",
+        }}
+      >
+        ★
+      </span>
+    </span>
+  );
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+      {Array.from({ length: 5 }).map((_, i) => {
+        const idx = i + 1;
+        let pct: 0 | 50 | 100 = 0;
+        if (idx <= full) pct = 100;
+        else if (idx === full + 1 && half) pct = 50;
+        return <Star key={i} fillPct={pct} />;
+      })}
+    </span>
   );
 }
 
@@ -718,7 +786,7 @@ function SortableTile({
   disabled: boolean;
   onClick: () => void;
   showRating: boolean;
-  ratingText?: string;
+  ratingText: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -730,6 +798,8 @@ function SortableTile({
     transition,
     opacity: isDragging ? 0.6 : 1,
   };
+
+  const canShowBubble = showRating && Boolean(ratingText);
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -782,7 +852,7 @@ function SortableTile({
             </div>
           )}
 
-          {showRating && ratingText ? <RatingBadge value={ratingText} /> : null}
+          {canShowBubble ? <RatingBubble text={ratingText} /> : null}
         </div>
       </button>
     </div>
@@ -790,7 +860,15 @@ function SortableTile({
 }
 
 /** Stats mode components */
-function StatCard({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {
+function StatCard({
+  title,
+  value,
+  subtitle,
+}: {
+  title: string;
+  value: React.ReactNode;
+  subtitle?: string;
+}) {
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
       <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
@@ -828,7 +906,17 @@ function TopList({
             const pct = top ? Math.max(0.08, x.count / top) : 0.08;
             return (
               <div key={x.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 110, color: COLORS.text, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div
+                  style={{
+                    width: 110,
+                    color: COLORS.text,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
                   {x.label}
                 </div>
 
@@ -865,7 +953,7 @@ function TopRatedRow({
   items,
 }: {
   title: string;
-  items: Array<{ title: string; coverUrl: string; ratingText?: string; onClick: () => void }>;
+  items: Array<{ title: string; coverUrl: string; onClick: () => void; myRating: string }>;
 }) {
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
@@ -875,41 +963,45 @@ function TopRatedRow({
 
       <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "nowrap", alignItems: "stretch" }}>
         {items.length ? (
-          items.map((g, i) => (
-            <button
-              key={`${g.title}-${i}`}
-              onClick={g.onClick}
-              title={g.title}
-              style={{
-                flex: "1 1 0",
-                minWidth: 0,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.card,
-                borderRadius: 14,
-                overflow: "hidden",
-                padding: 0,
-                cursor: "pointer",
-                boxShadow: "0 18px 45px rgba(0,0,0,.45)",
-                aspectRatio: "2 / 3",
-                position: "relative",
-              }}
-            >
-              {g.coverUrl ? (
-                <img
-                  src={g.coverUrl}
-                  alt={g.title}
-                  loading="lazy"
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              ) : (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
-                  No cover
-                </div>
-              )}
+          items.map((g, i) => {
+            const ratingText = formatMyRatingText(g.myRating);
+            return (
+              <button
+                key={`${g.title}-${i}`}
+                onClick={g.onClick}
+                title={g.title}
+                style={{
+                  flex: "1 1 0",
+                  minWidth: 0,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.card,
+                  borderRadius: 14,
+                  overflow: "hidden",
+                  padding: 0,
+                  cursor: "pointer",
+                  boxShadow: "0 18px 45px rgba(0,0,0,.45)",
+                  aspectRatio: "2 / 3",
+                  position: "relative",
+                }}
+              >
+                {g.coverUrl ? (
+                  <img
+                    src={g.coverUrl}
+                    alt={g.title}
+                    loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                ) : (
+                  <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+                    No cover
+                  </div>
+                )}
 
-              {g.ratingText ? <RatingBadge value={g.ratingText} /> : null}
-            </button>
-          ))
+                {/* Only show if rating exists */}
+                {ratingText ? <RatingBubble text={ratingText} /> : null}
+              </button>
+            );
+          })
         ) : (
           <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games for this year in the current view.</div>
         )}
@@ -985,6 +1077,7 @@ export default function HomePage() {
       return () => mq.removeEventListener("change", onChange);
     }
 
+    // legacy Safari
     (mq as any).addListener?.(onChange);
     return () => (mq as any).removeListener?.(onChange);
   }, []);
@@ -1034,12 +1127,19 @@ export default function HomePage() {
     if (activeTab !== "queued" && activeTab !== "wishlist") setEditMode(false);
   }, [activeTab]);
 
-  const platforms = useMemo(() => uniqueSorted(games.flatMap((g) => g.platform)), [games]);
-  const statuses = useMemo(() => uniqueSorted(games.map((g) => g.status)), [games]);
-  const ownerships = useMemo(() => uniqueSorted(games.map((g) => g.ownership)), [games]);
-  const formats = useMemo(() => uniqueSorted(games.map((g) => g.format)), [games]);
-  const allGenres = useMemo(() => uniqueSorted(games.flatMap((g) => g.genres)), [games]);
-  const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
+  // Wishlist exclusion rule helpers
+  const isWishlistOnly = (g: Game) => norm(g.ownership) === "Wishlist";
+  const allowWishlistInQueued = (g: Game) => norm(g.status) === "Queued";
+
+  // For facet option lists (esp Status), exclude wishlist-only items so they don't pollute "status"
+  const facetBase = useMemo(() => games.filter((g) => !isWishlistOnly(g) || allowWishlistInQueued(g)), [games]);
+
+  const platforms = useMemo(() => uniqueSorted(facetBase.flatMap((g) => g.platform)), [facetBase]);
+  const statuses = useMemo(() => uniqueSorted(facetBase.map((g) => g.status)), [facetBase]);
+  const ownerships = useMemo(() => uniqueSorted(games.map((g) => g.ownership)), [games]); // keep all ownership values
+  const formats = useMemo(() => uniqueSorted(facetBase.map((g) => g.format)), [facetBase]);
+  const allGenres = useMemo(() => uniqueSorted(facetBase.flatMap((g) => g.genres)), [facetBase]);
+  const allYearsPlayed = useMemo(() => uniqueSorted(facetBase.flatMap((g) => g.yearPlayed)), [facetBase]);
 
   function toggleGenre(genre: string) {
     setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
@@ -1062,10 +1162,18 @@ export default function HomePage() {
     const query = q.trim().toLowerCase();
 
     const base = games.filter((g) => {
-      // ✅ Wishlist-ownership games should NOT appear in Games/Status/Stats views.
-      // They should appear in Wishlist tab, OR still be visible in Queued tab.
-      const isWishlistOwnership = norm(g.ownership) === "Wishlist";
-      if (isWishlistOwnership && activeTab !== "wishlist" && activeTab !== "queued") return false;
+      // Wishlist rule:
+      // - Wishlist ownership should only appear in Wishlist tab
+      // - Or in Queued tab IF Status = Queued
+      if (isWishlistOnly(g)) {
+        if (activeTab === "wishlist") {
+          // ok
+        } else if (activeTab === "queued" && allowWishlistInQueued(g)) {
+          // ok
+        } else {
+          return false;
+        }
+      }
 
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
@@ -1131,13 +1239,16 @@ export default function HomePage() {
   const yearsPlayedCounts = useMemo(() => countByTagList(filtered, (g) => g.yearPlayed), [filtered]);
   const genreCounts = useMemo(() => countByTagList(filtered, (g) => g.genres), [filtered]);
 
-  const gamesTotal = games.length;
+  // Sidebar stats should also respect wishlist exclusion rule
+  const gamesForSidebarStats = useMemo(() => games.filter((g) => !isWishlistOnly(g) || allowWishlistInQueued(g)), [games]);
+
+  const gamesTotal = gamesForSidebarStats.length;
   const year = new Date().getFullYear();
-  const inYear = games.filter((g) => g.yearPlayed.includes(String(year))).length;
-  const nowPlayingTotal = games.filter((g) => norm(g.status) === "Now Playing").length;
-  const queuedTotal = games.filter((g) => norm(g.status) === "Queued").length;
-  const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length;
-  const completedTotal = games.filter((g) => toBool(g.completed)).length;
+  const inYear = gamesForSidebarStats.filter((g) => g.yearPlayed.includes(String(year))).length;
+  const nowPlayingTotal = gamesForSidebarStats.filter((g) => norm(g.status) === "Now Playing").length;
+  const queuedTotal = gamesForSidebarStats.filter((g) => norm(g.status) === "Queued").length;
+  const wishlistTotal = games.filter((g) => norm(g.ownership) === "Wishlist").length; // still show wishlist count
+  const completedTotal = gamesForSidebarStats.filter((g) => toBool(g.completed)).length;
 
   const headerAvatarUrl =
     "https://lh3.googleusercontent.com/a/ACg8ocJytvmuklInlqxJZOFW4Xi1sk40VGv_-UYAYNmYqAzSlBbno9AKeQ=s288-c-no";
@@ -1247,6 +1358,8 @@ export default function HomePage() {
   }
 
   const statsData = useMemo(() => {
+    // In Stats tab, you’re viewing "filtered" already. But we ALSO ensure wishlist-only is excluded
+    // unless it's queued-wishlist (allowed).
     const total = filtered.length;
 
     const completedInView = filtered.filter((g) => toBool(g.completed)).length;
@@ -1284,13 +1397,18 @@ export default function HomePage() {
       .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))
       .find((g) => Boolean(toDateNum(g.releaseDate)));
 
-    const ratings = filtered.map((g) => Number(norm(g.igdbRating))).filter((n) => Number.isFinite(n));
-    const avgIgdb = ratings.length ? Math.round((ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10) / 10 : null;
-
-    // ✅ Top Rated Games This Year (cap 5) — uses My Rating decimals
+    // Calendar-year slice (Year Played includes current year)
     const thisYear = String(new Date().getFullYear());
-    const topRatedThisYear = filtered
-      .filter((g) => g.yearPlayed.includes(thisYear))
+    const yearSlice = filtered.filter((g) => g.yearPlayed.includes(thisYear));
+
+    const igdbNums = yearSlice.map((g) => Number(norm(g.igdbRating))).filter((n) => Number.isFinite(n));
+    const myNums = yearSlice.map((g) => Number(norm(g.myRating))).filter((n) => Number.isFinite(n));
+
+    const avgIgdbYear = igdbNums.length ? Math.round((igdbNums.reduce((s, n) => s + n, 0) / igdbNums.length) * 10) / 10 : null;
+    const avgMyYear = myNums.length ? Math.round((myNums.reduce((s, n) => s + n, 0) / myNums.length) * 10) / 10 : null;
+
+    // Top Rated Games This Year (cap 5) — uses My Rating numeric
+    const topRatedThisYear = yearSlice
       .map((g) => ({ g, r: Number(norm(g.myRating)) }))
       .filter((x) => Number.isFinite(x.r))
       .sort((a, b) => b.r - a.r || toDateNum(b.g.releaseDate) - toDateNum(a.g.releaseDate) || a.g.title.localeCompare(b.g.title))
@@ -1310,9 +1428,11 @@ export default function HomePage() {
       byYearPlayed,
       newestTitle: newest?.title || "—",
       newestDate: newest?.releaseDate || "—",
-      avgIgdb,
-      ratedCount: ratings.length,
+      avgIgdbYear,
+      avgMyYear,
+      yearSliceCount: yearSlice.length,
       topRatedThisYear,
+      thisYear,
     };
   }, [filtered]);
 
@@ -1359,7 +1479,17 @@ export default function HomePage() {
               </div>
             </div>
             {syncState === "error" && syncMsg ? (
-              <div style={{ color: COLORS.danger, fontSize: 11, fontWeight: 800, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div
+                style={{
+                  color: COLORS.danger,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  marginTop: 4,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
                 {syncMsg}
               </div>
             ) : null}
@@ -1408,6 +1538,10 @@ export default function HomePage() {
       {topRightCount}
     </div>
   );
+
+  // Rating bubble should only show in:
+  // - Completed tab grid
+  const showRatingOnTiles = activeTab === "completed";
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
@@ -1650,35 +1784,47 @@ export default function HomePage() {
           <div>Loading…</div>
         ) : activeTab === "stats" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
               <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
               <StatCard title="Completed" value={statsData.completedInView} />
               <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
               <StatCard title="Queued" value={statsData.queuedInView} />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
               <StatCard title="Wishlist" value={statsData.wishlistInView} />
               <StatCard
-                title="Avg IGDB rating"
-                value={statsData.avgIgdb ?? "—"}
-                subtitle={statsData.avgIgdb ? `${statsData.ratedCount} rated items in view` : "No ratings in view"}
+                title="Average IGDB Rating vs My Avg Rating"
+                value={
+                  <span>
+                    {statsData.avgIgdbYear ?? "—"} <span style={{ color: COLORS.muted, fontWeight: 850 }}>/</span> {statsData.avgMyYear ?? "—"}
+                  </span>
+                }
+                subtitle={`Calendar year ${statsData.thisYear} • ${statsData.yearSliceCount} games in view`}
               />
               <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
             </div>
 
             <TopRatedRow
               title="Top Rated Games This Year"
-              items={statsData.topRatedThisYear.map((g) => {
-                const r = Number(norm(g.myRating));
-                const ratingText = Number.isFinite(r) ? r.toFixed(1) : undefined;
-                return {
-                  title: g.title,
-                  coverUrl: g.coverUrl,
-                  ratingText,
-                  onClick: () => setSelectedGame(g),
-                };
-              })}
+              items={statsData.topRatedThisYear.map((g) => ({
+                title: g.title,
+                coverUrl: g.coverUrl,
+                myRating: g.myRating,
+                onClick: () => setSelectedGame(g),
+              }))}
             />
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
@@ -1696,6 +1842,12 @@ export default function HomePage() {
             <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
               Tip: Use Platform/Genre/Year facets + search, then jump to Stats to see the breakdown of that slice.
             </div>
+
+            <style>{`
+              @media (max-width: 900px) {
+                .statsGrid4 { grid-template-columns: 1fr !important; }
+              }
+            `}</style>
           </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1705,9 +1857,7 @@ export default function HomePage() {
                   const g = idToGame.get(id);
                   if (!g) return null;
 
-                  const showRating = activeTab === "completed" && toBool(g.completed);
-                  const r = Number(norm(g.myRating));
-                  const ratingText = showRating && Number.isFinite(r) ? r.toFixed(1) : undefined;
+                  const ratingText = formatMyRatingText(g.myRating);
 
                   return (
                     <SortableTile
@@ -1718,7 +1868,7 @@ export default function HomePage() {
                       tileSize={tileSize}
                       disabled={!reorderAllowed}
                       onClick={() => setSelectedGame(g)}
-                      showRating={showRating}
+                      showRating={showRatingOnTiles}
                       ratingText={ratingText}
                     />
                   );
@@ -1842,8 +1992,24 @@ export default function HomePage() {
                   <Field label="Release Date" value={selectedGame.releaseDate} />
                   <Field label="Year Played" value={selectedGame.yearPlayed.join(", ")} />
 
-                  <Field label="IGDB Rating" value={selectedGame.igdbRating} />
-                  <Field label="My Rating" value={selectedGame.myRating} />
+                  <Field
+                    label="IGDB Rating"
+                    value={
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <span>{selectedGame.igdbRating}</span>
+                        <StarRating outOf10={selectedGame.igdbRating} />
+                      </div>
+                    }
+                  />
+                  <Field
+                    label="My Rating"
+                    value={
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <span>{formatMyRatingText(selectedGame.myRating) || selectedGame.myRating}</span>
+                        <StarRating outOf10={selectedGame.myRating} />
+                      </div>
+                    }
+                  />
 
                   <Field label="Hours Played" value={selectedGame.hoursPlayed} />
                   <Field label="Developer" value={selectedGame.developer} />
@@ -1860,6 +2026,12 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+
+            <style>{`
+              @media (max-width: 900px) {
+                .modalStack { flex-direction: column !important; }
+              }
+            `}</style>
           </div>
         </div>
       )}
