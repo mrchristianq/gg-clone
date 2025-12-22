@@ -15,15 +15,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Chris' Game Library",
   description: "Personal game collection and backlog tracker",
-
-  // ✅ App icons
   icons: {
-    icon: "/favicon.ico",
-    apple: "/apple-touch-icon.png",
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
-
-  // (optional but recommended)
-  themeColor: "#0b0b0f",
 };
 
 export default function RootLayout({
@@ -33,9 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
       </body>
     </html>
