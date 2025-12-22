@@ -1,27 +1,13 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.2.2
+   Version: 2.2.3
    Notes:
-   - Rating bubble ONLY shows on:
-       1) Completed tab tiles
-       2) “Top Rated Games This Year” row in Stats
-     (and only if My Rating exists and is NOT 0.0)
-   - Rating formatting:
-       - show 1 decimal (9.5, 8.0, etc)
-       - BUT if rating is exactly 10, show "10" (no decimal)
-   - Modal ratings:
-       - Stars FIRST, then number to the right
-       - Stars use sidebar teal (#168584) and are a bit larger
-       - Stars round to nearest half-star (rating/2)
-   - Modal tags:
-       - Removed “Completed” pill (Completed should NOT show as a tag)
-   - Stats layout:
-       - Top row has 5 cards: Total, Completed, Now Playing, Queued, Wishlist
-       - Second row has 3 cards:
-           Newest Release in View
-           Average IGDB Rating (this year games)
-           My Average Rating (this year games)
-         (exclude missing/0.0 ratings from averages)
+   - MOBILE FIXES:
+       - Tabs: Row1 = Games / Now Playing / Queued
+               Row2 = Wishlist / Completed / Stats
+       - Hide top-right count bubble on mobile (and remove mobile topbar count)
+       - Stats page: stack 1 stat per line on mobile
+   - Everything else kept from 2.2.2
 ===================================================================================== */
 
 "use client";
@@ -75,7 +61,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "2.2.2";
+const VERSION = "2.2.3";
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -693,14 +679,13 @@ function parseMyRating10(v: string) {
 }
 
 function formatRatingLabel(n10: number) {
-  // show 10 as "10", otherwise one decimal (8.0, 9.5, etc)
   if (Math.abs(n10 - 10) < 1e-9) return "10";
   return n10.toFixed(1);
 }
 
 function ratingToStars5(n10: number) {
-  const raw5 = n10 / 2; // 0..5
-  const rounded = Math.round(raw5 * 2) / 2; // nearest 0.5
+  const raw5 = n10 / 2;
+  const rounded = Math.round(raw5 * 2) / 2;
   return Math.max(0, Math.min(5, rounded));
 }
 
@@ -724,7 +709,6 @@ function StarIcon({
         </clipPath>
       </defs>
 
-      {/* outline */}
       <path
         d="M12 2.5l2.9 6.1 6.7.6-5.1 4.3 1.6 6.6-6.1-3.5-6.1 3.5 1.6-6.6-5.1-4.3 6.7-.6L12 2.5z"
         fill="none"
@@ -733,7 +717,6 @@ function StarIcon({
         strokeWidth="1.4"
       />
 
-      {/* filled part */}
       <g clipPath={`url(#${id})`}>
         <path
           d="M12 2.5l2.9 6.1 6.7.6-5.1 4.3 1.6 6.6-6.1-3.5-6.1 3.5 1.6-6.6-5.1-4.3 6.7-.6L12 2.5z"
@@ -772,9 +755,7 @@ function StarsAndNumber({
           <StarIcon key={idx} fillPct={v} size={size} color={COLORS.statNumber} />
         ))}
       </div>
-      <div style={{ fontWeight: 900, color: COLORS.text }}>
-        {formatRatingLabel(rating10)}
-      </div>
+      <div style={{ fontWeight: 900, color: COLORS.text }}>{formatRatingLabel(rating10)}</div>
     </div>
   );
 }
@@ -844,12 +825,20 @@ function SortableTile({
               }}
             />
           ) : (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: COLORS.muted,
+                fontSize: 12,
+              }}
+            >
               No cover
             </div>
           )}
 
-          {/* Rating bubble (smaller, darker glass, closer to corner) */}
           {overlayRating != null ? (
             <div
               style={{
@@ -1180,10 +1169,10 @@ export default function HomePage() {
 
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
-       
+
       // ✅ Exclude Wishlist games from the primary Games tab
       if (activeTab === "games" && norm(g.ownership) === "Wishlist") return false;
-       
+
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
       if (activeTab === "queued" && norm(g.status) !== "Queued") return false;
       if (activeTab === "wishlist" && norm(g.ownership) !== "Wishlist") return false;
@@ -1273,7 +1262,10 @@ export default function HomePage() {
 
   const topRightCount = filtered.length;
 
-  const dragIds = useMemo(() => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)), [filtered]);
+  const dragIds = useMemo(
+    () => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)),
+    [filtered]
+  );
 
   const idToGame = useMemo(() => {
     const m = new Map<string, Game>();
@@ -1401,7 +1393,6 @@ export default function HomePage() {
 
     const thisYear = String(new Date().getFullYear());
 
-    // Averages only for THIS YEAR games (yearPlayed includes current year)
     const thisYearGames = filtered.filter((g) => g.yearPlayed.includes(thisYear));
 
     const igdbRatings = thisYearGames
@@ -1420,7 +1411,6 @@ export default function HomePage() {
       ? Math.round((myRatings10.reduce((s, n) => s + n, 0) / myRatings10.length) * 10) / 10
       : null;
 
-    // Top Rated Games This Year (cap 5) — uses My Rating only (exclude missing/0)
     const topRatedThisYear = thisYearGames
       .map((g) => ({ g, r: parseMyRating10(g.myRating) }))
       .filter((x) => x.r != null)
@@ -1544,6 +1534,30 @@ export default function HomePage() {
       }}
     >
       {topRightCount}
+    </div>
+  );
+
+  const TabGridMobile = () => (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
+      </div>
     </div>
   );
 
@@ -1748,18 +1762,24 @@ export default function HomePage() {
             >
               Filters
             </button>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>{topRightCount}</div>
+            {/* Removed mobile count */}
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-            <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-            <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
-            <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
-            <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {isMobile ? (
+              <TabGridMobile />
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+                <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+                <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+                <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+                <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+                <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1782,7 +1802,8 @@ export default function HomePage() {
               </button>
             )}
 
-            {topRightCountBubble}
+            {/* ✅ Hide count bubble on mobile */}
+            {!isMobile ? topRightCountBubble : null}
           </div>
         </div>
 
@@ -1790,43 +1811,53 @@ export default function HomePage() {
           <div>Loading…</div>
         ) : activeTab === "stats" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Top row: 5 stats */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
-              <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
-              <StatCard title="Completed" value={statsData.completedInView} />
-              <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
-              <StatCard title="Queued" value={statsData.queuedInView} />
-              <StatCard title="Wishlist" value={statsData.wishlistInView} />
-            </div>
+            {/* MOBILE: stack all stats 1 per line */}
+            {isMobile ? (
+              <>
+                <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
+                <StatCard title="Completed" value={statsData.completedInView} />
+                <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
+                <StatCard title="Queued" value={statsData.queuedInView} />
+                <StatCard title="Wishlist" value={statsData.wishlistInView} />
 
-            {/* Second row: 3 stats */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
-              <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
-              <StatCard
-                title="Average IGDB Rating (this year)"
-                value={statsData.avgIgdbThisYear ?? "—"}
-                subtitle={statsData.avgIgdbThisYear ? `${statsData.igdbRatedCountThisYear} rated this year` : "No rated this year"}
-              />
-              <StatCard
-                title="My Average Rating (this year)"
-                value={statsData.avgMyThisYear ?? "—"}
-                subtitle={statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
-              />
-            </div>
+                <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
+                <StatCard
+                  title="Average IGDB Rating (this year)"
+                  value={statsData.avgIgdbThisYear ?? "—"}
+                  subtitle={statsData.avgIgdbThisYear ? `${statsData.igdbRatedCountThisYear} rated this year` : "No rated this year"}
+                />
+                <StatCard
+                  title="My Average Rating (this year)"
+                  value={statsData.avgMyThisYear ?? "—"}
+                  subtitle={statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
+                />
+              </>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12 }}>
+                  <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
+                  <StatCard title="Completed" value={statsData.completedInView} />
+                  <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
+                  <StatCard title="Queued" value={statsData.queuedInView} />
+                  <StatCard title="Wishlist" value={statsData.wishlistInView} />
+                </div>
 
-            {/* Top Rated row (cap 5, evenly spaced) — WITH bubble */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+                  <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
+                  <StatCard
+                    title="Average IGDB Rating (this year)"
+                    value={statsData.avgIgdbThisYear ?? "—"}
+                    subtitle={statsData.avgIgdbThisYear ? `${statsData.igdbRatedCountThisYear} rated this year` : "No rated this year"}
+                  />
+                  <StatCard
+                    title="My Average Rating (this year)"
+                    value={statsData.avgMyThisYear ?? "—"}
+                    subtitle={statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
+                  />
+                </div>
+              </>
+            )}
+
             <TopRatedRow
               title="Top Rated Games This Year"
               items={statsData.topRatedThisYear.map((g) => ({
@@ -1837,12 +1868,12 @@ export default function HomePage() {
               }))}
             />
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Top Platforms" items={statsData.byPlatform} />
               <TopList title="Top Genres" items={statsData.byGenre} />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Status Breakdown" items={statsData.byStatus} />
               <TopList title="Ownership Breakdown" items={statsData.byOwnership} />
             </div>
@@ -1852,12 +1883,6 @@ export default function HomePage() {
             <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
               Tip: Use Platform/Genre/Year facets + search, then jump to Stats to see the breakdown of that slice.
             </div>
-
-            <style>{`
-              @media (max-width: 900px) {
-                .statsGrid4 { grid-template-columns: 1fr !important; }
-              }
-            `}</style>
           </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1973,8 +1998,7 @@ export default function HomePage() {
                     {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
                     {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
                     {selectedGame.status ? <TagPill text={selectedGame.status} /> : null}
-
-                    {/* REMOVED: Completed pill */}
+                    {/* no Completed pill */}
                   </div>
                 </div>
               </div>
@@ -2013,10 +2037,7 @@ export default function HomePage() {
                       })()
                     }
                   />
-                  <Field
-                    label="My Rating"
-                    value={<StarsAndNumber rating10={parseMyRating10(selectedGame.myRating)} size={19} />}
-                  />
+                  <Field label="My Rating" value={<StarsAndNumber rating10={parseMyRating10(selectedGame.myRating)} size={19} />} />
 
                   <Field label="Hours Played" value={selectedGame.hoursPlayed} />
                   <Field label="Developer" value={selectedGame.developer} />
@@ -2033,12 +2054,6 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-
-            <style>{`
-              @media (max-width: 900px) {
-                .modalStack { flex-direction: column !important; }
-              }
-            `}</style>
           </div>
         </div>
       )}
