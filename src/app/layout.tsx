@@ -15,6 +15,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Chris' Game Library",
   description: "Personal game collection and backlog tracker",
+
+  // ✅ App icons
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+
+  // (optional but recommended)
+  themeColor: "#0b0b0f",
 };
 
 export default function RootLayout({
