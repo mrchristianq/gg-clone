@@ -1,17 +1,35 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.2.4
+   Version: 2.2.5
    Notes:
-   - Mobile tab layout:
-       Row 1: Games, Now Playing, Queued
-       Row 2: Wishlist, Completed, Stats
+   - Rating bubble ONLY shows on:
+       1) Completed tab tiles
+       2) “Top Rated Games This Year” row in Stats
+     (and only if My Rating exists and is NOT 0.0)
+   - Rating formatting:
+       - show 1 decimal (9.5, 8.0, etc)
+       - BUT if rating is exactly 10, show "10" (no decimal)
+   - Modal ratings:
+       - Stars FIRST, then number to the right
+       - Stars use sidebar teal (#168584) and are a bit larger
+       - Stars round to nearest half-star (rating/2)
+   - Modal tags:
+       - Removed “Completed” pill (Completed should NOT show as a tag)
+   - Stats layout:
+       - Top row has 5 cards: Total, Completed, Now Playing, Queued, Wishlist
+       - Second row has 3 cards:
+           Newest Release in View
+           Average IGDB Rating (this year games)
+           My Average Rating (this year games)
+         (exclude missing/0.0 ratings from averages)
    - Mobile:
-       - Remove the big count bubble near tabs
-       - KEEP total count on the top-right in the mobile topbar (next to Filters)
-       - Hide “Edit Mode” button (desktop-only)
-   - Mobile Stats:
-       - Stack stats cards 1 per line (all grids become 1 column on mobile)
-   - Everything else remains as in 2.2.2
+       - Tabs wrap into 2 lines: Games / Now Playing / Queue, then Wishlist / Completed / Stats
+       - No count bubble in header on mobile
+       - Keep total count on the mobile topbar (right side)
+       - Edit Mode button is desktop-only
+       - Stats page stacks 1 card per line on mobile
+   - NEW in 2.2.5:
+       - Stats rating cards show stars + number (like details page)
 ===================================================================================== */
 
 "use client";
@@ -28,7 +46,11 @@ import {
   closestCenter,
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { SortableContext, useSortable, rectSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  useSortable,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 type Row = Record<string, string>;
@@ -65,7 +87,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "2.2.4";
+const VERSION = "2.2.5";
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -100,7 +122,14 @@ function splitTags(s: string) {
 
 function toBool(v: string) {
   const s = norm(v).toLowerCase();
-  return s === "true" || s === "yes" || s === "y" || s === "1" || s === "checked" || s === "x";
+  return (
+    s === "true" ||
+    s === "yes" ||
+    s === "y" ||
+    s === "1" ||
+    s === "checked" ||
+    s === "x"
+  );
 }
 
 function toDateNum(s: string) {
@@ -549,40 +578,6 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
   );
 }
 
-function MobileTabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        border: "none",
-        background: "transparent",
-        color: COLORS.text,
-        cursor: "pointer",
-        fontSize: 14,
-        fontWeight: 900,
-        padding: "10px 6px",
-        position: "relative",
-        opacity: active ? 1 : 0.78,
-        whiteSpace: "nowrap",
-        textAlign: "center",
-      }}
-    >
-      {label}
-      <span
-        style={{
-          position: "absolute",
-          left: 10,
-          right: 10,
-          bottom: 4,
-          height: 2,
-          borderRadius: 999,
-          background: active ? COLORS.accent : "transparent",
-        }}
-      />
-    </button>
-  );
-}
-
 function StatsBlock({
   left,
   right,
@@ -708,7 +703,7 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   return toDateNum(bRel) - toDateNum(aRel);
 }
 
-/** ===== Rating helpers (bubble + modal) ===== */
+/** ===== Rating helpers (bubble + modal + stats) ===== */
 function parseMyRating10(v: string) {
   const n = Number(norm(v));
   if (!Number.isFinite(n)) return null;
@@ -722,8 +717,8 @@ function formatRatingLabel(n10: number) {
 }
 
 function ratingToStars5(n10: number) {
-  const raw5 = n10 / 2; // 0..5
-  const rounded = Math.round(raw5 * 2) / 2; // nearest 0.5
+  const raw5 = n10 / 2;
+  const rounded = Math.round(raw5 * 2) / 2;
   return Math.max(0, Math.min(5, rounded));
 }
 
@@ -732,7 +727,7 @@ function StarIcon({
   size,
   color,
 }: {
-  fillPct: number; // 0..1
+  fillPct: number;
   size: number;
   color: string;
 }) {
@@ -871,6 +866,7 @@ function SortableTile({
             </div>
           )}
 
+          {/* Rating bubble (smaller, darker glass, closer to corner) */}
           {overlayRating != null ? (
             <div
               style={{
@@ -904,16 +900,50 @@ function SortableTile({
 }
 
 /** Stats mode components */
-function StatCard({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {
+function StatCard({
+  title,
+  value,
+  subtitle,
+}: {
+  title: string;
+  value: React.ReactNode;
+  subtitle?: string;
+}) {
   return (
-    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+    <div
+      style={{
+        background: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 16,
+        padding: 14,
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
         {title}
       </div>
-      <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
-        {value}
-      </div>
-      {subtitle ? <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>{subtitle}</div> : null}
+
+      <div style={{ marginTop: 10 }}>{value}</div>
+
+      {subtitle ? (
+        <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>{subtitle}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function BigStatNumber({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
+      {children}
     </div>
   );
 }
@@ -1019,23 +1049,9 @@ function TopRatedRow({
               }}
             >
               {g.coverUrl ? (
-                <img
-                  src={g.coverUrl}
-                  alt={g.title}
-                  loading="lazy"
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
+                <img src={g.coverUrl} alt={g.title} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               ) : (
-                <div
-                  style={{
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: COLORS.muted,
-                    fontSize: 12,
-                  }}
-                >
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
                   No cover
                 </div>
               )}
@@ -1093,13 +1109,9 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">(
-    "games"
-  );
+  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">(
-    "releaseDate"
-  );
+  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -1312,7 +1324,10 @@ export default function HomePage() {
 
   const topRightCount = filtered.length;
 
-  const dragIds = useMemo(() => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)), [filtered]);
+  const dragIds = useMemo(
+    () => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)),
+    [filtered]
+  );
 
   const idToGame = useMemo(() => {
     const m = new Map<string, Game>();
@@ -1594,27 +1609,6 @@ export default function HomePage() {
     </div>
   );
 
-  const mobileTopRightCountBubble = (
-    <div
-      title={`${topRightCount} items in view`}
-      style={{
-        height: 30,
-        padding: "0 10px",
-        borderRadius: 999,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: COLORS.card,
-        border: `1px solid ${COLORS.border}`,
-        color: COLORS.text,
-        fontSize: 12,
-        fontWeight: 950,
-      }}
-    >
-      {topRightCount}
-    </div>
-  );
-
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
       <style>{`
@@ -1633,7 +1627,6 @@ export default function HomePage() {
           }
           .sidebar.open { transform: translateX(0); }
           .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 40; }
-
           .mobileTopbar {
             position: sticky;
             top: 0;
@@ -1643,14 +1636,12 @@ export default function HomePage() {
             border-bottom: 1px solid ${COLORS.border};
             margin: -18px -18px 14px -18px;
           }
-
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
 
-          /* ✅ Stats: stack all grids on mobile */
-          .statsRow5 { grid-template-columns: 1fr !important; }
-          .statsRow3 { grid-template-columns: 1fr !important; }
-          .statsRow2 { grid-template-columns: 1fr !important; }
+          .statsGrid5, .statsGrid3, .statsGrid2 {
+            grid-template-columns: 1fr !important;
+          }
         }
         .mobileOnly { display: none; }
       `}</style>
@@ -1691,13 +1682,7 @@ export default function HomePage() {
               src={headerAvatarUrl}
               alt="Chris"
               referrerPolicy="no-referrer"
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: 999,
-                objectFit: "cover",
-                border: `1px solid ${COLORS.border}`,
-              }}
+              style={{ width: 60, height: 60, borderRadius: 999, objectFit: "cover", border: `1px solid ${COLORS.border}` }}
             />
             <div style={{ fontSize: 18, fontWeight: 900 }}>Chris&apos; Game Library</div>
           </div>
@@ -1756,14 +1741,7 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>COVER SIZE</div>
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
-            <input
-              type="range"
-              min={90}
-              max={260}
-              value={tileSize}
-              onChange={(e) => setTileSize(Number(e.target.value))}
-              style={{ width: "100%" }}
-            />
+            <input type="range" min={90} max={260} value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: "100%" }} />
           </div>
         </div>
 
@@ -1819,7 +1797,6 @@ export default function HomePage() {
       </aside>
 
       <main style={{ flex: 1, padding: 18 }}>
-        {/* ✅ Mobile topbar: keep count bubble on the right */}
         <div className="mobileTopbar mobileOnly">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <button
@@ -1837,61 +1814,62 @@ export default function HomePage() {
             >
               Filters
             </button>
-
-            {mobileTopRightCountBubble}
+            {/* ✅ keep total count on mobile topbar (right side) */}
+            <div style={{ fontSize: 12, color: COLORS.muted }}>{topRightCount}</div>
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
-          {/* ✅ Tabs: custom mobile layout (3 + 3) */}
-          {isMobile ? (
-            <div style={{ width: "100%" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
-                <MobileTabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-                <MobileTabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-                <MobileTabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
-
-                <MobileTabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-                <MobileTabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
-                <MobileTabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {isMobile ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "nowrap" }}>
+                  <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+                  <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+                  <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "nowrap" }}>
+                  <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+                  <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+                  <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
+                </div>
+              </>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+                <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+                <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+                <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+                <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+                <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
               </div>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-              <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-              <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-              <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
-              <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-              <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
-              <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* ✅ Desktop-only right controls */}
-          {!isMobile && (
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              {(activeTab === "queued" || activeTab === "wishlist") && (
-                <button
-                  onClick={() => setEditMode((v) => !v)}
-                  style={{
-                    border: `1px solid ${COLORS.border}`,
-                    background: editMode ? "rgba(34,197,94,0.16)" : COLORS.card,
-                    color: COLORS.text,
-                    borderRadius: 12,
-                    padding: "10px 12px",
-                    cursor: "pointer",
-                    fontWeight: 900,
-                    fontSize: 12,
-                  }}
-                  title="Toggle drag+drop ordering"
-                >
-                  {editMode ? "Edit Mode: ON" : "Edit Mode: OFF"}
-                </button>
-              )}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* ✅ Edit Mode button is desktop-only */}
+            {!isMobile && (activeTab === "queued" || activeTab === "wishlist") && (
+              <button
+                onClick={() => setEditMode((v) => !v)}
+                style={{
+                  border: `1px solid ${COLORS.border}`,
+                  background: editMode ? "rgba(34,197,94,0.16)" : COLORS.card,
+                  color: COLORS.text,
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  fontWeight: 900,
+                  fontSize: 12,
+                }}
+                title="Toggle drag+drop ordering"
+              >
+                {editMode ? "Edit Mode: ON" : "Edit Mode: OFF"}
+              </button>
+            )}
 
-              {topRightCountBubble}
-            </div>
-          )}
+            {/* ✅ no count bubble in header on mobile */}
+            {!isMobile ? topRightCountBubble : null}
+          </div>
         </div>
 
         {loading ? (
@@ -1900,42 +1878,58 @@ export default function HomePage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Top row: 5 stats */}
             <div
-              className="statsRow5"
+              className="statsGrid5"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
                 gap: 12,
               }}
             >
-              <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
-              <StatCard title="Completed" value={statsData.completedInView} />
-              <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
-              <StatCard title="Queued" value={statsData.queuedInView} />
-              <StatCard title="Wishlist" value={statsData.wishlistInView} />
+              <StatCard title="Total games" value={<BigStatNumber>{statsData.total}</BigStatNumber>} subtitle="Respects facets + search" />
+              <StatCard title="Completed" value={<BigStatNumber>{statsData.completedInView}</BigStatNumber>} />
+              <StatCard title="Now Playing" value={<BigStatNumber>{statsData.nowPlayingInView}</BigStatNumber>} />
+              <StatCard title="Queued" value={<BigStatNumber>{statsData.queuedInView}</BigStatNumber>} />
+              <StatCard title="Wishlist" value={<BigStatNumber>{statsData.wishlistInView}</BigStatNumber>} />
             </div>
 
             {/* Second row: 3 stats */}
             <div
-              className="statsRow3"
+              className="statsGrid3"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
                 gap: 12,
               }}
             >
-              <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
+              <StatCard
+                title="Newest release in view"
+                value={<BigStatNumber>{statsData.newestTitle}</BigStatNumber>}
+                subtitle={statsData.newestDate}
+              />
+
+              {/* ✅ 2.2.5: stars + number */}
               <StatCard
                 title="Average IGDB Rating (this year)"
-                value={statsData.avgIgdbThisYear ?? "—"}
+                value={
+                  <div style={{ marginTop: 2 }}>
+                    <StarsAndNumber rating10={statsData.avgIgdbThisYear} size={20} />
+                  </div>
+                }
                 subtitle={statsData.avgIgdbThisYear ? `${statsData.igdbRatedCountThisYear} rated this year` : "No rated this year"}
               />
+
               <StatCard
                 title="My Average Rating (this year)"
-                value={statsData.avgMyThisYear ?? "—"}
+                value={
+                  <div style={{ marginTop: 2 }}>
+                    <StarsAndNumber rating10={statsData.avgMyThisYear} size={20} />
+                  </div>
+                }
                 subtitle={statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
               />
             </div>
 
+            {/* Top Rated row (cap 5, evenly spaced) — WITH bubble */}
             <TopRatedRow
               title="Top Rated Games This Year"
               items={statsData.topRatedThisYear.map((g) => ({
@@ -1947,7 +1941,7 @@ export default function HomePage() {
             />
 
             <div
-              className="statsRow2"
+              className="statsGrid2"
               style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}
             >
               <TopList title="Top Platforms" items={statsData.byPlatform} />
@@ -1955,7 +1949,7 @@ export default function HomePage() {
             </div>
 
             <div
-              className="statsRow2"
+              className="statsGrid2"
               style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}
             >
               <TopList title="Status Breakdown" items={statsData.byStatus} />
@@ -2049,7 +2043,7 @@ export default function HomePage() {
               ×
             </button>
 
-            <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }} className="modalStack">
               <div style={{ width: 260, flex: "0 0 auto" }}>
                 <div
                   style={{
@@ -2062,11 +2056,7 @@ export default function HomePage() {
                   }}
                 >
                   {selectedGame.coverUrl ? (
-                    <img
-                      src={selectedGame.coverUrl}
-                      alt={selectedGame.title}
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                    />
+                    <img src={selectedGame.coverUrl} alt={selectedGame.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                   ) : (
                     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
                       No cover
@@ -2086,6 +2076,7 @@ export default function HomePage() {
                     {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
                     {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
                     {selectedGame.status ? <TagPill text={selectedGame.status} /> : null}
+                    {/* REMOVED: Completed pill */}
                   </div>
                 </div>
               </div>
@@ -2116,13 +2107,11 @@ export default function HomePage() {
 
                   <Field
                     label="IGDB Rating"
-                    value={
-                      (() => {
-                        const n = Number(norm(selectedGame.igdbRating));
-                        const n10 = Number.isFinite(n) && n > 0 ? Math.max(0, Math.min(10, n)) : null;
-                        return <StarsAndNumber rating10={n10} size={19} />;
-                      })()
-                    }
+                    value={(() => {
+                      const n = Number(norm(selectedGame.igdbRating));
+                      const n10 = Number.isFinite(n) && n > 0 ? Math.max(0, Math.min(10, n)) : null;
+                      return <StarsAndNumber rating10={n10} size={19} />;
+                    })()}
                   />
                   <Field label="My Rating" value={<StarsAndNumber rating10={parseMyRating10(selectedGame.myRating)} size={19} />} />
 
