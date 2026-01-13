@@ -1814,7 +1814,7 @@ export default function HomePage() {
     const apply = () => {
       const m = mq.matches;
       setIsMobile(m);
-      setTileSize(m ? 100 : 120);
+      setTileSize(m ? 75 : 120);
     };
 
     apply();
@@ -2314,7 +2314,7 @@ export default function HomePage() {
   );
 
   const homeRowStyle: React.CSSProperties = isMobile
-    ? { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }
+    ? { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`, gap: 10 }
     : { display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 };
 
   const mobileTabs = (
@@ -2475,7 +2475,7 @@ export default function HomePage() {
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
             <input
               type="range"
-              min={90}
+              min={75}
               max={260}
               value={tileSize}
               onChange={(e) => setTileSize(Number(e.target.value))}
@@ -2630,7 +2630,6 @@ export default function HomePage() {
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      meta={g.releaseDate ? formatCountdown(g.releaseDate) : undefined}
                       size={isMobile ? "100%" : 120}
                       onClick={() => setSelectedGame(g)}
                     />
@@ -2649,6 +2648,7 @@ export default function HomePage() {
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
+                      meta={g.releaseDate ? formatCountdown(g.releaseDate) : undefined}
                       size={isMobile ? "100%" : 120}
                       onClick={() => setSelectedGame(g)}
                     />
@@ -2744,7 +2744,7 @@ export default function HomePage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: isMobile ? "repeat(4, minmax(0, 1fr))" : `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 75 : tileSize}px, 1fr))`,
                   gap: isMobile ? 10 : 12,
                 }}
               >
