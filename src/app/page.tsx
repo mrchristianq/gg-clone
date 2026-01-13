@@ -675,7 +675,17 @@ function SmallSelect({
   );
 }
 
-function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function TabButton({
+  label,
+  active,
+  onClick,
+  compact = false,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  compact?: boolean;
+}) {
   return (
     <button
       onClick={onClick}
@@ -684,9 +694,9 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
         background: "transparent",
         color: COLORS.text,
         cursor: "pointer",
-        fontSize: 16,
+        fontSize: compact ? 13 : 16,
         fontWeight: 900,
-        padding: "8px 6px",
+        padding: compact ? "6px 6px" : "8px 6px",
         position: "relative",
         opacity: active ? 1 : 0.72,
         whiteSpace: "nowrap",
@@ -960,7 +970,7 @@ function HomeTile({
   title: string;
   coverUrl: string;
   meta?: string;
-  size?: number;
+  size?: number | string;
   onClick: () => void;
 }) {
   return (
@@ -2303,19 +2313,27 @@ export default function HomePage() {
     </div>
   );
 
+  const homeRowStyle: React.CSSProperties = isMobile
+    ? { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }
+    : { display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 };
+
   const mobileTabs = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-        <TabButton label="Home" active={activeTab === "home"} onClick={() => setActiveTab("home")} />
-        <TabButton label="All Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-        <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-        <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
-        <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-        <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
-        <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
-      </div>
+    <div
+      style={{
+        display: "flex",
+        gap: 10,
+        overflowX: "auto",
+        paddingBottom: 4,
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
+      <TabButton label="Home" active={activeTab === "home"} onClick={() => setActiveTab("home")} compact />
+      <TabButton label="All Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} compact />
+      <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} compact />
+      <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} compact />
+      <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} compact />
+      <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} compact />
+      <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} compact />
     </div>
   );
   return (
@@ -2587,14 +2605,14 @@ export default function HomePage() {
         ) : activeTab === "home" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <HomeSection title="Now Playing">
-              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+              <div style={homeRowStyle}>
                 {homeData.nowPlaying.length ? (
                   homeData.nowPlaying.slice(0, 5).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      size={130}
+                      size={isMobile ? "100%" : 130}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2605,15 +2623,14 @@ export default function HomePage() {
             </HomeSection>
 
             <HomeSection title="Recently Completed">
-              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+              <div style={homeRowStyle}>
                 {homeData.recentlyCompleted.length ? (
                   homeData.recentlyCompleted.slice(0, 5).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      meta={g.dateCompleted ? formatDateShort(g.dateCompleted) : undefined}
-                      size={120}
+                      size={isMobile ? "100%" : 120}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2624,15 +2641,14 @@ export default function HomePage() {
             </HomeSection>
 
             <HomeSection title="Upcoming">
-              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+              <div style={homeRowStyle}>
                 {homeData.upcomingWishlist.length ? (
                   homeData.upcomingWishlist.slice(0, 5).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      meta={g.releaseDate ? formatDateShort(g.releaseDate) : undefined}
-                      size={120}
+                      size={isMobile ? "100%" : 120}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2643,15 +2659,14 @@ export default function HomePage() {
             </HomeSection>
 
             <HomeSection title="New Releases">
-              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+              <div style={homeRowStyle}>
                 {homeData.recentlyReleased.length ? (
                   homeData.recentlyReleased.slice(0, 5).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      meta={g.releaseDate ? formatDateShort(g.releaseDate) : undefined}
-                      size={120}
+                      size={isMobile ? "100%" : 120}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2725,7 +2740,13 @@ export default function HomePage() {
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={dragIds} strategy={rectSortingStrategy}>
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`, gap: 12 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile ? "repeat(4, minmax(0, 1fr))" : `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
+                  gap: isMobile ? 10 : 12,
+                }}
+              >
                 {dragIds.map((id) => {
                   const g = idToGame.get(id);
                   if (!g) return null;
