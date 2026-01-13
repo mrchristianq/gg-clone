@@ -141,6 +141,46 @@ function toDateNum(s: string) {
   return Number.isFinite(t) ? t : 0;
 }
 
+function formatDateShort(s: string) {
+  const t = toDateNum(s);
+  if (!t) return "TBA";
+  try {
+    return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return s;
+  }
+}
+
+function formatCountdown(s: string) {
+  const t = toDateNum(s);
+  if (!t) return "TBA";
+  const now = Date.now();
+  const diffDays = Math.max(0, Math.ceil((t - now) / (1000 * 60 * 60 * 24)));
+  if (diffDays <= 7) return `in ${diffDays} day${diffDays === 1 ? "" : "s"}`;
+  if (diffDays <= 30) {
+    const weeks = Math.ceil(diffDays / 7);
+    return `in ${weeks} week${weeks === 1 ? "" : "s"}`;
+  }
+  if (diffDays < 365) {
+    const months = Math.ceil(diffDays / 30);
+    return `in ${months} month${months === 1 ? "" : "s"}`;
+  }
+  const years = Math.ceil(diffDays / 365);
+  return `in ${years} year${years === 1 ? "" : "s"}`;
+}
+
+function formatDaysAgo(s: string) {
+  const t = toDateNum(s);
+  if (!t) return "TBA";
+  const now = Date.now();
+  const diffDays = Math.max(0, Math.floor((now - t) / (1000 * 60 * 60 * 24)));
+  if (diffDays === 0) return "today";
+  if (diffDays === 1) return "1 day ago";
+  if (diffDays < 30) return `${diffDays} days ago`;
+  const months = Math.floor(diffDays / 30);
+  return `${months} month${months === 1 ? "" : "s"} ago`;
+}
+
 function uniqueSorted(values: string[]) {
   return Array.from(
     new Set(
@@ -910,6 +950,112 @@ function SortableTile({
   );
 }
 
+function HomeTile({
+  title,
+  coverUrl,
+  meta,
+  size = 150,
+  onClick,
+}: {
+  title: string;
+  coverUrl: string;
+  meta?: string;
+  size?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        border: "none",
+        padding: 0,
+        background: "transparent",
+        cursor: "pointer",
+        textAlign: "left",
+        width: size,
+      }}
+      title={title}
+    >
+      <div
+        style={{
+          position: "relative",
+          aspectRatio: "2 / 3",
+          background: COLORS.card,
+          borderRadius: 16,
+          overflow: "hidden",
+          boxShadow: "0 18px 40px rgba(0,0,0,.55)",
+        }}
+      >
+        {coverUrl ? (
+          <img
+            src={coverUrl}
+            alt={title}
+            loading="lazy"
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: COLORS.muted,
+              fontSize: 12,
+            }}
+          >
+            No cover
+          </div>
+        )}
+
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            padding: "10px 10px 8px",
+            background: "linear-gradient(180deg, rgba(3,6,10,0) 0%, rgba(3,6,10,0.8) 70%)",
+          }}
+        >
+          <div style={{ color: "white", fontSize: 12, fontWeight: 800, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>
+            {title}
+          </div>
+          {meta ? <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, marginTop: 2 }}>{meta}</div> : null}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function HomeSection({
+  title,
+  subtitle,
+  count,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 900 }}>{title}</div>
+          {subtitle ? <div style={{ fontSize: 12, color: COLORS.muted, marginTop: 2 }}>{subtitle}</div> : null}
+        </div>
+        {typeof count === "number" ? <CountBadge n={count} /> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 /** ===== Stats UI ===== */
 function StatCard({
   title,
@@ -1619,9 +1765,9 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">(
-    "games"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "home" | "games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats"
+  >("home");
 
   const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">(
     "releaseDate"
@@ -1852,6 +1998,43 @@ export default function HomePage() {
   }, [filtered]);
 
   const reorderAllowed = editMode && (activeTab === "queued" || activeTab === "wishlist");
+
+  const homeData = useMemo(() => {
+    const base = filtered;
+    const today = Date.now();
+    const days90 = 1000 * 60 * 60 * 24 * 90;
+
+    const nowPlaying = base
+      .filter((g) => norm(g.status) === "Now Playing")
+      .sort((a, b) => a.title.localeCompare(b.title));
+
+    const recentlyCompleted = base
+      .filter((g) => toBool(g.completed))
+      .filter((g) => toDateNum(g.dateCompleted))
+      .sort((a, b) => toDateNum(b.dateCompleted) - toDateNum(a.dateCompleted));
+
+    const upcomingWishlist = base
+      .filter((g) => norm(g.ownership) === "Wishlist")
+      .filter((g) => {
+        const t = toDateNum(g.releaseDate);
+        return t && t > today;
+      })
+      .sort((a, b) => toDateNum(a.releaseDate) - toDateNum(b.releaseDate));
+
+    const recentlyReleased = base
+      .filter((g) => {
+        const t = toDateNum(g.releaseDate);
+        return t && t <= today && t >= today - days90;
+      })
+      .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate));
+
+    return {
+      nowPlaying,
+      recentlyCompleted,
+      upcomingWishlist,
+      recentlyReleased,
+    };
+  }, [filtered]);
 
   function formatLastSync(ts: number | null) {
     if (!ts) return "—";
@@ -2123,11 +2306,12 @@ export default function HomePage() {
   const mobileTabs = (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-        <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+        <TabButton label="Home" active={activeTab === "home"} onClick={() => setActiveTab("home")} />
+        <TabButton label="All Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
         <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-        <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
         <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
         <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
         <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
@@ -2361,7 +2545,8 @@ export default function HomePage() {
         {/* Desktop tabs + bubble; Mobile uses 2-line tabs */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
           <div className="desktopOnly" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-            <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+            <TabButton label="Home" active={activeTab === "home"} onClick={() => setActiveTab("home")} />
+            <TabButton label="All Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
             <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
             <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
             <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
@@ -2399,6 +2584,83 @@ export default function HomePage() {
 
         {loading ? (
           <div>Loading…</div>
+        ) : activeTab === "home" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <HomeSection title="Now Playing" count={homeData.nowPlaying.length}>
+              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+                {homeData.nowPlaying.length ? (
+                  homeData.nowPlaying.map((g, i) => (
+                    <HomeTile
+                      key={`${g.title}-${i}`}
+                      title={g.title}
+                      coverUrl={g.coverUrl}
+                      size={150}
+                      onClick={() => setSelectedGame(g)}
+                    />
+                  ))
+                ) : (
+                  <div style={{ color: COLORS.muted, fontSize: 12 }}>No games in progress.</div>
+                )}
+              </div>
+            </HomeSection>
+
+            <HomeSection title="Recently Completed" count={homeData.recentlyCompleted.length}>
+              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+                {homeData.recentlyCompleted.length ? (
+                  homeData.recentlyCompleted.map((g, i) => (
+                    <HomeTile
+                      key={`${g.title}-${i}`}
+                      title={g.title}
+                      coverUrl={g.coverUrl}
+                      meta={g.dateCompleted ? formatDate(g.dateCompleted) : undefined}
+                      size={140}
+                      onClick={() => setSelectedGame(g)}
+                    />
+                  ))
+                ) : (
+                  <div style={{ color: COLORS.muted, fontSize: 12 }}>No recent completions.</div>
+                )}
+              </div>
+            </HomeSection>
+
+            <HomeSection title="Upcoming" count={homeData.upcomingWishlist.length}>
+              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+                {homeData.upcomingWishlist.length ? (
+                  homeData.upcomingWishlist.map((g, i) => (
+                    <HomeTile
+                      key={`${g.title}-${i}`}
+                      title={g.title}
+                      coverUrl={g.coverUrl}
+                      meta={g.releaseDate ? formatDate(g.releaseDate) : undefined}
+                      size={140}
+                      onClick={() => setSelectedGame(g)}
+                    />
+                  ))
+                ) : (
+                  <div style={{ color: COLORS.muted, fontSize: 12 }}>No upcoming wishlist games.</div>
+                )}
+              </div>
+            </HomeSection>
+
+            <HomeSection title="New Releases" count={homeData.recentlyReleased.length}>
+              <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
+                {homeData.recentlyReleased.length ? (
+                  homeData.recentlyReleased.map((g, i) => (
+                    <HomeTile
+                      key={`${g.title}-${i}`}
+                      title={g.title}
+                      coverUrl={g.coverUrl}
+                      meta={g.releaseDate ? formatDate(g.releaseDate) : undefined}
+                      size={140}
+                      onClick={() => setSelectedGame(g)}
+                    />
+                  ))
+                ) : (
+                  <div style={{ color: COLORS.muted, fontSize: 12 }}>No recent releases.</div>
+                )}
+              </div>
+            </HomeSection>
+          </div>
         ) : activeTab === "stats" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div className="statsGrid5" style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12 }}>
