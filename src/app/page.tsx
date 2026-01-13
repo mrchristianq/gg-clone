@@ -2586,7 +2586,7 @@ export default function HomePage() {
           <div>Loading…</div>
         ) : activeTab === "home" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <HomeSection title="Now Playing" count={homeData.nowPlaying.length}>
+            <HomeSection title="Now Playing">
               <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
                 {homeData.nowPlaying.length ? (
                   homeData.nowPlaying.slice(0, 5).map((g, i) => (
@@ -2604,7 +2604,7 @@ export default function HomePage() {
               </div>
             </HomeSection>
 
-            <HomeSection title="Recently Completed" count={homeData.recentlyCompleted.length}>
+            <HomeSection title="Recently Completed">
               <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
                 {homeData.recentlyCompleted.length ? (
                   homeData.recentlyCompleted.slice(0, 5).map((g, i) => (
@@ -2623,7 +2623,7 @@ export default function HomePage() {
               </div>
             </HomeSection>
 
-            <HomeSection title="Upcoming" count={homeData.upcomingWishlist.length}>
+            <HomeSection title="Upcoming">
               <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
                 {homeData.upcomingWishlist.length ? (
                   homeData.upcomingWishlist.slice(0, 5).map((g, i) => (
@@ -2642,7 +2642,7 @@ export default function HomePage() {
               </div>
             </HomeSection>
 
-            <HomeSection title="New Releases" count={homeData.recentlyReleased.length}>
+            <HomeSection title="New Releases">
               <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
                 {homeData.recentlyReleased.length ? (
                   homeData.recentlyReleased.slice(0, 5).map((g, i) => (
