@@ -2589,12 +2589,12 @@ export default function HomePage() {
             <HomeSection title="Now Playing" count={homeData.nowPlaying.length}>
               <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
                 {homeData.nowPlaying.length ? (
-                  homeData.nowPlaying.map((g, i) => (
+                  homeData.nowPlaying.slice(0, 5).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      size={150}
+                      size={130}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2607,13 +2607,13 @@ export default function HomePage() {
             <HomeSection title="Recently Completed" count={homeData.recentlyCompleted.length}>
               <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
                 {homeData.recentlyCompleted.length ? (
-                  homeData.recentlyCompleted.map((g, i) => (
+                  homeData.recentlyCompleted.slice(0, 5).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
                       meta={g.dateCompleted ? formatDateShort(g.dateCompleted) : undefined}
-                      size={140}
+                      size={120}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2626,13 +2626,13 @@ export default function HomePage() {
             <HomeSection title="Upcoming" count={homeData.upcomingWishlist.length}>
               <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
                 {homeData.upcomingWishlist.length ? (
-                  homeData.upcomingWishlist.map((g, i) => (
+                  homeData.upcomingWishlist.slice(0, 5).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
                       meta={g.releaseDate ? formatDateShort(g.releaseDate) : undefined}
-                      size={140}
+                      size={120}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2645,13 +2645,13 @@ export default function HomePage() {
             <HomeSection title="New Releases" count={homeData.recentlyReleased.length}>
               <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 }}>
                 {homeData.recentlyReleased.length ? (
-                  homeData.recentlyReleased.map((g, i) => (
+                  homeData.recentlyReleased.slice(0, 5).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
                       meta={g.releaseDate ? formatDateShort(g.releaseDate) : undefined}
-                      size={140}
+                      size={120}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
