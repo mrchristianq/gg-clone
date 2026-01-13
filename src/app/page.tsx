@@ -1,35 +1,8 @@
 /* =====================================================================================
    Chris' Game Library
    Version: 2.2.5
-   Notes:
-   - Rating bubble ONLY shows on:
-       1) Completed tab tiles
-       2) “Top Rated Games This Year” row in Stats
-     (and only if My Rating exists and is NOT 0.0)
-   - Rating formatting:
-       - show 1 decimal (9.5, 8.0, etc)
-       - BUT if rating is exactly 10, show "10" (no decimal)
-   - Modal ratings:
-       - Stars FIRST, then number to the right
-       - Stars use sidebar teal (#168584) and are a bit larger
-       - Stars round to nearest half-star (rating/2)
-   - Modal tags:
-       - Removed “Completed” pill (Completed should NOT show as a tag)
-   - Stats layout:
-       - Top row has 5 cards: Total, Completed, Now Playing, Queued, Wishlist
-       - Second row has 3 cards:
-           Newest Release in View
-           Average IGDB Rating (this year games)
-           My Average Rating (this year games)
-         (exclude missing/0.0 ratings from averages)
-   - Mobile:
-       - Tabs wrap into 2 lines: Games / Now Playing / Queue, then Wishlist / Completed / Stats
-       - No count bubble in header on mobile
-       - Keep total count on the mobile topbar (right side)
-       - Edit Mode button is desktop-only
-       - Stats page stacks 1 card per line on mobile
-   - NEW in 2.2.5:
-       - Stats rating cards show stars + number (like details page)
+   Update in this drop:
+   - "Newest release in view" now shows cover art (thumbnail) + title + date
 ===================================================================================== */
 
 "use client";
@@ -103,7 +76,7 @@ const COLORS = {
   badgeBg: "rgba(255,255,255,0.06)",
   badgeBorder: "rgba(255,255,255,0.10)",
   accent: "#22c55e",
-  statNumber: "#168584", // sidebar teal
+  statNumber: "#168584",
   modalBg: "rgba(0,0,0,0.62)",
   warn: "#f59e0b",
   danger: "#ef4444",
@@ -452,8 +425,21 @@ function FacetRowsSingle({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -504,8 +490,21 @@ function FacetRowsMulti({
               if (!active) e.currentTarget.style.background = "transparent";
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: active ? 700 : 500, opacity: c === 0 ? 0.55 : 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: active ? 700 : 500,
+                  opacity: c === 0 ? 0.55 : 1,
+                }}
+              >
                 {opt}
               </span>
               <CountBadge n={c} />
@@ -545,7 +544,15 @@ function SmallSelect({
   );
 }
 
-function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function TabButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -623,7 +630,14 @@ function StatsBlock({
         STATS
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 18, rowGap: 10 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          columnGap: 18,
+          rowGap: 10,
+        }}
+      >
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {left.map((s) => (
             <div key={s.label} style={rowStyle}>
@@ -676,17 +690,37 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
         minHeight: 56,
       }}
     >
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", marginBottom: 6 }}>
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.04em",
+          marginBottom: 6,
+        }}
+      >
         {label}
       </div>
-      <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>
+      <div
+        style={{
+          color: COLORS.text,
+          fontSize: 13,
+          fontWeight: 700,
+          lineHeight: 1.35,
+        }}
+      >
         {value || <span style={{ color: COLORS.muted }}>—</span>}
       </div>
     </div>
   );
 }
 
-function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel: string, bRel: string) {
+function compareOrderThenReleaseDesc(
+  aOrderRaw: string,
+  bOrderRaw: string,
+  aRel: string,
+  bRel: string
+) {
   const a = toNumOrNaN(aOrderRaw);
   const b = toNumOrNaN(bOrderRaw);
 
@@ -703,7 +737,7 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   return toDateNum(bRel) - toDateNum(aRel);
 }
 
-/** ===== Rating helpers (bubble + modal + stats) ===== */
+/** ===== Rating helpers ===== */
 function parseMyRating10(v: string) {
   const n = Number(norm(v));
   if (!Number.isFinite(n)) return null;
@@ -735,7 +769,13 @@ function StarIcon({
   const w = Math.max(0, Math.min(1, fillPct));
 
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ display: "block" }}>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden
+      style={{ display: "block" }}
+    >
       <defs>
         <clipPath id={id}>
           <rect x="0" y="0" width={24 * w} height="24" />
@@ -761,7 +801,13 @@ function StarIcon({
   );
 }
 
-function StarsAndNumber({ rating10, size = 18 }: { rating10: number | null; size?: number }) {
+function StarsAndNumber({
+  rating10,
+  size = 18,
+}: {
+  rating10: number | null;
+  size?: number;
+}) {
   if (!rating10) return <span style={{ color: COLORS.muted }}>—</span>;
 
   const s5 = ratingToStars5(rating10);
@@ -779,10 +825,17 @@ function StarsAndNumber({ rating10, size = 18 }: { rating10: number | null; size
     <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
         {stars.map((v, idx) => (
-          <StarIcon key={idx} fillPct={v} size={size} color={COLORS.statNumber} />
+          <StarIcon
+            key={idx}
+            fillPct={v}
+            size={size}
+            color={COLORS.statNumber}
+          />
         ))}
       </div>
-      <div style={{ fontWeight: 900, color: COLORS.text }}>{formatRatingLabel(rating10)}</div>
+      <div style={{ fontWeight: 900, color: COLORS.text }}>
+        {formatRatingLabel(rating10)}
+      </div>
     </div>
   );
 }
@@ -804,10 +857,11 @@ function SortableTile({
   onClick: () => void;
   overlayRating?: number | null;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    disabled,
-  });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({
+      id,
+      disabled,
+    });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -846,7 +900,12 @@ function SortableTile({
               src={coverUrl}
               alt={title}
               loading="lazy"
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).style.display = "none";
               }}
@@ -866,7 +925,6 @@ function SortableTile({
             </div>
           )}
 
-          {/* Rating bubble (smaller, darker glass, closer to corner) */}
           {overlayRating != null ? (
             <div
               style={{
@@ -899,16 +957,122 @@ function SortableTile({
   );
 }
 
-/** Stats mode components */
+/** ===== Stats components ===== */
 function StatCard({
   title,
   value,
   subtitle,
+  coverUrl,
 }: {
   title: string;
   value: React.ReactNode;
   subtitle?: string;
+  coverUrl?: string | null;
 }) {
+  return (
+    <div
+      style={{
+        background: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 16,
+        padding: 14,
+        minWidth: 0,
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+      }}
+    >
+      {/* ✅ Cover art thumbnail (used by "Newest release in view") */}
+      {coverUrl ? (
+        <div
+          style={{
+            width: 48,
+            height: 72,
+            borderRadius: 10,
+            overflow: "hidden",
+            border: `1px solid ${COLORS.border}`,
+            background: COLORS.card,
+            flex: "0 0 auto",
+            boxShadow: "0 14px 30px rgba(0,0,0,.35)",
+          }}
+          title="Cover"
+        >
+          <img
+            src={coverUrl}
+            alt=""
+            loading="lazy"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+        </div>
+      ) : null}
+
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div
+          style={{
+            color: COLORS.muted,
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+          }}
+        >
+          {title}
+        </div>
+
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: coverUrl ? 18 : 26,
+            fontWeight: 950,
+            color: coverUrl ? COLORS.text : COLORS.statNumber,
+            lineHeight: 1.15,
+            wordBreak: "break-word",
+          }}
+        >
+          {value}
+        </div>
+
+        {subtitle ? (
+          <div
+            style={{
+              marginTop: 8,
+              color: COLORS.muted,
+              fontSize: 12,
+              fontWeight: 650,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+            title={subtitle}
+          >
+            {subtitle}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TopList({
+  title,
+  items,
+  max = 12,
+}: {
+  title: string;
+  items: Array<{ label: string; count: number }>;
+  max?: number;
+}) {
+  const shown = items.slice(0, max);
+  const top = shown[0]?.count || 0;
+
   return (
     <div
       style={{
@@ -931,47 +1095,26 @@ function StatCard({
         {title}
       </div>
 
-      <div style={{ marginTop: 10 }}>{value}</div>
-
-      {subtitle ? (
-        <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>{subtitle}</div>
-      ) : null}
-    </div>
-  );
-}
-
-function BigStatNumber({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
-      {children}
-    </div>
-  );
-}
-
-function TopList({
-  title,
-  items,
-  max = 12,
-}: {
-  title: string;
-  items: Array<{ label: string; count: number }>;
-  max?: number;
-}) {
-  const shown = items.slice(0, max);
-  const top = shown[0]?.count || 0;
-
-  return (
-    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-        {title}
-      </div>
-
-      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div
+        style={{
+          marginTop: 10,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
         {shown.length ? (
           shown.map((x) => {
             const pct = top ? Math.max(0.08, x.count / top) : 0.08;
             return (
-              <div key={x.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div
+                key={x.label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
                 <div
                   style={{
                     width: 110,
@@ -997,10 +1140,25 @@ function TopList({
                     minWidth: 0,
                   }}
                 >
-                  <div style={{ height: "100%", width: `${Math.round(pct * 100)}%`, background: COLORS.statNumber, opacity: 0.55 }} />
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${Math.round(pct * 100)}%`,
+                      background: COLORS.statNumber,
+                      opacity: 0.55,
+                    }}
+                  />
                 </div>
 
-                <div style={{ width: 34, textAlign: "right", color: COLORS.muted, fontSize: 12, fontWeight: 750 }}>
+                <div
+                  style={{
+                    width: 34,
+                    textAlign: "right",
+                    color: COLORS.muted,
+                    fontSize: 12,
+                    fontWeight: 750,
+                  }}
+                >
                   {x.count}
                 </div>
               </div>
@@ -1019,15 +1177,43 @@ function TopRatedRow({
   items,
 }: {
   title: string;
-  items: Array<{ title: string; coverUrl: string; onClick: () => void; overlayRating?: number | null }>;
+  items: Array<{
+    title: string;
+    coverUrl: string;
+    onClick: () => void;
+    overlayRating?: number | null;
+  }>;
 }) {
   return (
-    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+    <div
+      style={{
+        background: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 16,
+        padding: 14,
+      }}
+    >
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
         {title}
       </div>
 
-      <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "nowrap", alignItems: "stretch" }}>
+      <div
+        style={{
+          marginTop: 12,
+          display: "flex",
+          gap: 10,
+          flexWrap: "nowrap",
+          alignItems: "stretch",
+        }}
+      >
         {items.length ? (
           items.map((g, i) => (
             <button
@@ -1049,9 +1235,28 @@ function TopRatedRow({
               }}
             >
               {g.coverUrl ? (
-                <img src={g.coverUrl} alt={g.title} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                <img
+                  src={g.coverUrl}
+                  alt={g.title}
+                  loading="lazy"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
               ) : (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+                <div
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: COLORS.muted,
+                    fontSize: 12,
+                  }}
+                >
                   No cover
                 </div>
               )}
@@ -1083,7 +1288,112 @@ function TopRatedRow({
             </button>
           ))
         ) : (
-          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games for this year in the current view.</div>
+          <div style={{ color: COLORS.muted, fontSize: 12 }}>
+            No rated games for this year in the current view.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Vertical Year Played chart */
+function YearPlayedBars({
+  items,
+}: {
+  items: Array<{ label: string; count: number }>;
+}) {
+  const max = Math.max(1, ...items.map((x) => x.count));
+  const sorted = items
+    .slice()
+    .sort((a, b) => Number(a.label) - Number(b.label));
+
+  return (
+    <div
+      style={{
+        background: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 16,
+        padding: 14,
+      }}
+    >
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
+        Year Played
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          display: "flex",
+          alignItems: "flex-end",
+          gap: 10,
+          height: 170,
+          padding: "8px 4px 2px 4px",
+          borderRadius: 14,
+          border: `1px solid ${COLORS.border}`,
+          background: "rgba(255,255,255,0.03)",
+          overflowX: "auto",
+        }}
+      >
+        {sorted.length ? (
+          sorted.map((x) => {
+            const h = Math.max(6, Math.round((x.count / max) * 140));
+            return (
+              <div
+                key={x.label}
+                style={{
+                  minWidth: 36,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <div
+                  title={`${x.label}: ${x.count}`}
+                  style={{
+                    width: 22,
+                    height: h,
+                    borderRadius: 999,
+                    background: COLORS.statNumber,
+                    opacity: 0.55,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                />
+                <div
+                  style={{
+                    color: COLORS.muted,
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                >
+                  {x.label}
+                </div>
+                <div
+                  style={{
+                    color: COLORS.text,
+                    fontSize: 11,
+                    fontWeight: 900,
+                    opacity: 0.9,
+                  }}
+                >
+                  {x.count}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div style={{ color: COLORS.muted, fontSize: 12, padding: 10 }}>
+            No Year Played data.
+          </div>
         )}
       </div>
     </div>
@@ -1109,9 +1419,18 @@ export default function HomePage() {
   const [selectedOwnership, setSelectedOwnership] = useState("");
   const [selectedFormat, setSelectedFormat] = useState("");
 
-  const [activeTab, setActiveTab] = useState<"games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats">("games");
+  const [activeTab, setActiveTab] = useState<
+    "games" | "nowPlaying" | "queued" | "wishlist" | "completed" | "stats"
+  >("games");
 
-  const [sortBy, setSortBy] = useState<"title" | "releaseDate" | "dateCompleted" | "dateAdded" | "queuedOrder" | "wishlistOrder">("releaseDate");
+  const [sortBy, setSortBy] = useState<
+    | "title"
+    | "releaseDate"
+    | "dateCompleted"
+    | "dateAdded"
+    | "queuedOrder"
+    | "wishlistOrder"
+  >("releaseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const [openPlatform, setOpenPlatform] = useState(false);
@@ -1125,7 +1444,9 @@ export default function HomePage() {
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
   const [editMode, setEditMode] = useState(false);
-  const [syncState, setSyncState] = useState<"idle" | "saving" | "ok" | "error">("idle");
+  const [syncState, setSyncState] = useState<"idle" | "saving" | "ok" | "error">(
+    "idle"
+  );
   const [syncMsg, setSyncMsg] = useState<string>("");
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -1210,10 +1531,14 @@ export default function HomePage() {
   const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
 
   function toggleGenre(genre: string) {
-    setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
+    setSelectedGenres((prev) =>
+      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
+    );
   }
   function toggleYearPlayed(year: string) {
-    setSelectedYearsPlayed((prev) => (prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]));
+    setSelectedYearsPlayed((prev) =>
+      prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]
+    );
   }
 
   function clearFilters() {
@@ -1232,7 +1557,7 @@ export default function HomePage() {
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
-      // ✅ Exclude Wishlist games from the primary Games tab
+      // Exclude Wishlist games from the primary Games tab
       if (activeTab === "games" && norm(g.ownership) === "Wishlist") return false;
 
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
@@ -1266,13 +1591,28 @@ export default function HomePage() {
     const dir = sortDir === "asc" ? 1 : -1;
 
     return base.sort((a, b) => {
-      if (sortBy === "queuedOrder") return compareOrderThenReleaseDesc(a.queuedOrder, b.queuedOrder, a.releaseDate, b.releaseDate);
-      if (sortBy === "wishlistOrder") return compareOrderThenReleaseDesc(a.wishlistOrder, b.wishlistOrder, a.releaseDate, b.releaseDate);
+      if (sortBy === "queuedOrder")
+        return compareOrderThenReleaseDesc(
+          a.queuedOrder,
+          b.queuedOrder,
+          a.releaseDate,
+          b.releaseDate
+        );
+      if (sortBy === "wishlistOrder")
+        return compareOrderThenReleaseDesc(
+          a.wishlistOrder,
+          b.wishlistOrder,
+          a.releaseDate,
+          b.releaseDate
+        );
 
       if (sortBy === "title") return a.title.localeCompare(b.title) * dir;
-      if (sortBy === "releaseDate") return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
-      if (sortBy === "dateCompleted") return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
-      if (sortBy === "dateAdded") return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
+      if (sortBy === "releaseDate")
+        return (toDateNum(a.releaseDate) - toDateNum(b.releaseDate)) * dir;
+      if (sortBy === "dateCompleted")
+        return (toDateNum(a.dateCompleted) - toDateNum(b.dateCompleted)) * dir;
+      if (sortBy === "dateAdded")
+        return (toDateNum(a.dateAdded) - toDateNum(b.dateAdded)) * dir;
 
       return 0;
     });
@@ -1325,7 +1665,8 @@ export default function HomePage() {
   const topRightCount = filtered.length;
 
   const dragIds = useMemo(
-    () => filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)),
+    () =>
+      filtered.map((g) => (g.igdbId ? `igdb:${g.igdbId}` : `t:${titleKey(g.title)}`)),
     [filtered]
   );
 
@@ -1350,7 +1691,8 @@ export default function HomePage() {
   }
 
   async function saveOrderToSheet(nextIds: string[]) {
-    const orderType = activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
+    const orderType =
+      activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
     if (!orderType) return;
 
     const orderedIgdbIds = nextIds
@@ -1448,13 +1790,17 @@ export default function HomePage() {
         return b.count - a.count || a.label.localeCompare(b.label);
       });
 
+    // ✅ Newest release in view (ignore future release dates) + cover
+    const now = Date.now();
     const newest = filtered
       .slice()
-      .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))
-      .find((g) => Boolean(toDateNum(g.releaseDate)));
+      .filter((g) => {
+        const d = toDateNum(g.releaseDate);
+        return d > 0 && d <= now;
+      })
+      .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))[0];
 
     const thisYear = String(new Date().getFullYear());
-
     const thisYearGames = filtered.filter((g) => g.yearPlayed.includes(thisYear));
 
     const igdbRatings = thisYearGames
@@ -1498,6 +1844,7 @@ export default function HomePage() {
       byYearPlayed,
       newestTitle: newest?.title || "—",
       newestDate: newest?.releaseDate || "—",
+      newestCoverUrl: newest?.coverUrl || "",
       avgIgdbThisYear,
       avgMyThisYear,
       igdbRatedCountThisYear: igdbRatings.length,
@@ -1542,7 +1889,13 @@ export default function HomePage() {
           <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
               <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 900 }}>
-                {syncState === "saving" ? "Syncing" : syncState === "ok" ? "Synced" : syncState === "error" ? "Error" : "Idle"}
+                {syncState === "saving"
+                  ? "Syncing"
+                  : syncState === "ok"
+                  ? "Synced"
+                  : syncState === "error"
+                  ? "Error"
+                  : "Idle"}
               </div>
               <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>
                 {lastSyncAt ? formatLastSync(lastSyncAt) : "—"}
@@ -1638,10 +1991,6 @@ export default function HomePage() {
           }
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
-
-          .statsGrid5, .statsGrid3, .statsGrid2 {
-            grid-template-columns: 1fr !important;
-          }
         }
         .mobileOnly { display: none; }
       `}</style>
@@ -1682,7 +2031,13 @@ export default function HomePage() {
               src={headerAvatarUrl}
               alt="Chris"
               referrerPolicy="no-referrer"
-              style={{ width: 60, height: 60, borderRadius: 999, objectFit: "cover", border: `1px solid ${COLORS.border}` }}
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 999,
+                objectFit: "cover",
+                border: `1px solid ${COLORS.border}`,
+              }}
             />
             <div style={{ fontSize: 18, fontWeight: 900 }}>Chris&apos; Game Library</div>
           </div>
@@ -1741,32 +2096,69 @@ export default function HomePage() {
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: COLORS.muted }}>COVER SIZE</div>
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
-            <input type="range" min={90} max={260} value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} style={{ width: "100%" }} />
+            <input
+              type="range"
+              min={90}
+              max={260}
+              value={tileSize}
+              onChange={(e) => setTileSize(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
           </div>
         </div>
 
         <CollapsibleSection title="Platform" open={openPlatform} setOpen={setOpenPlatform}>
-          <FacetRowsSingle options={platforms} counts={platformCounts} selected={selectedPlatform} onSelect={setSelectedPlatform} />
+          <FacetRowsSingle
+            options={platforms}
+            counts={platformCounts}
+            selected={selectedPlatform}
+            onSelect={setSelectedPlatform}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Status" open={openStatus} setOpen={setOpenStatus}>
-          <FacetRowsSingle options={statuses} counts={statusCounts} selected={selectedStatus} onSelect={setSelectedStatus} />
+          <FacetRowsSingle
+            options={statuses}
+            counts={statusCounts}
+            selected={selectedStatus}
+            onSelect={setSelectedStatus}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Ownership" open={openOwnership} setOpen={setOpenOwnership}>
-          <FacetRowsSingle options={ownerships} counts={ownershipCounts} selected={selectedOwnership} onSelect={setSelectedOwnership} />
+          <FacetRowsSingle
+            options={ownerships}
+            counts={ownershipCounts}
+            selected={selectedOwnership}
+            onSelect={setSelectedOwnership}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Format" open={openFormat} setOpen={setOpenFormat}>
-          <FacetRowsSingle options={formats} counts={formatCounts} selected={selectedFormat} onSelect={setSelectedFormat} />
+          <FacetRowsSingle
+            options={formats}
+            counts={formatCounts}
+            selected={selectedFormat}
+            onSelect={setSelectedFormat}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Year Played" open={openYearsPlayed} setOpen={setOpenYearsPlayed}>
-          <FacetRowsMulti options={allYearsPlayed} counts={yearsPlayedCounts} selected={selectedYearsPlayed} onToggle={toggleYearPlayed} />
+          <FacetRowsMulti
+            options={allYearsPlayed}
+            counts={yearsPlayedCounts}
+            selected={selectedYearsPlayed}
+            onToggle={toggleYearPlayed}
+          />
         </CollapsibleSection>
 
         <CollapsibleSection title="Genres" open={openGenres} setOpen={setOpenGenres}>
-          <FacetRowsMulti options={allGenres} counts={genreCounts} selected={selectedGenres} onToggle={toggleGenre} />
+          <FacetRowsMulti
+            options={allGenres}
+            counts={genreCounts}
+            selected={selectedGenres}
+            onToggle={toggleGenre}
+          />
         </CollapsibleSection>
 
         <button
@@ -1814,41 +2206,30 @@ export default function HomePage() {
             >
               Filters
             </button>
-            {/* ✅ keep total count on mobile topbar (right side) */}
             <div style={{ fontSize: 12, color: COLORS.muted }}>{topRightCount}</div>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {isMobile ? (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "nowrap" }}>
-                  <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-                  <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-                  <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "nowrap" }}>
-                  <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-                  <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
-                  <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
-                </div>
-              </>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
-                <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
-                <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
-                <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
-                <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
-                <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
-              </div>
-            )}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: 16,
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+            <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+            <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+            <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+            <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+            <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* ✅ Edit Mode button is desktop-only */}
-            {!isMobile && (activeTab === "queued" || activeTab === "wishlist") && (
+            {(activeTab === "queued" || activeTab === "wishlist") && (
               <button
                 onClick={() => setEditMode((v) => !v)}
                 style={{
@@ -1867,8 +2248,7 @@ export default function HomePage() {
               </button>
             )}
 
-            {/* ✅ no count bubble in header on mobile */}
-            {!isMobile ? topRightCountBubble : null}
+            {topRightCountBubble}
           </div>
         </div>
 
@@ -1876,60 +2256,43 @@ export default function HomePage() {
           <div>Loading…</div>
         ) : activeTab === "stats" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Top row: 5 stats */}
-            <div
-              className="statsGrid5"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
-              <StatCard title="Total games" value={<BigStatNumber>{statsData.total}</BigStatNumber>} subtitle="Respects facets + search" />
-              <StatCard title="Completed" value={<BigStatNumber>{statsData.completedInView}</BigStatNumber>} />
-              <StatCard title="Now Playing" value={<BigStatNumber>{statsData.nowPlayingInView}</BigStatNumber>} />
-              <StatCard title="Queued" value={<BigStatNumber>{statsData.queuedInView}</BigStatNumber>} />
-              <StatCard title="Wishlist" value={<BigStatNumber>{statsData.wishlistInView}</BigStatNumber>} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12 }}>
+              <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
+              <StatCard title="Completed" value={statsData.completedInView} />
+              <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
+              <StatCard title="Queued" value={statsData.queuedInView} />
+              <StatCard title="Wishlist" value={statsData.wishlistInView} />
             </div>
 
-            {/* Second row: 3 stats */}
-            <div
-              className="statsGrid3"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+              {/* ✅ Newest release shows cover art */}
               <StatCard
                 title="Newest release in view"
-                value={<BigStatNumber>{statsData.newestTitle}</BigStatNumber>}
+                value={statsData.newestTitle}
                 subtitle={statsData.newestDate}
+                coverUrl={statsData.newestCoverUrl || null}
               />
 
-              {/* ✅ 2.2.5: stars + number */}
               <StatCard
                 title="Average IGDB Rating (this year)"
-                value={
-                  <div style={{ marginTop: 2 }}>
-                    <StarsAndNumber rating10={statsData.avgIgdbThisYear} size={20} />
-                  </div>
+                value={<StarsAndNumber rating10={statsData.avgIgdbThisYear} size={18} />}
+                subtitle={
+                  statsData.avgIgdbThisYear
+                    ? `${statsData.igdbRatedCountThisYear} rated this year`
+                    : "No rated this year"
                 }
-                subtitle={statsData.avgIgdbThisYear ? `${statsData.igdbRatedCountThisYear} rated this year` : "No rated this year"}
               />
-
               <StatCard
                 title="My Average Rating (this year)"
-                value={
-                  <div style={{ marginTop: 2 }}>
-                    <StarsAndNumber rating10={statsData.avgMyThisYear} size={20} />
-                  </div>
+                value={<StarsAndNumber rating10={statsData.avgMyThisYear} size={18} />}
+                subtitle={
+                  statsData.avgMyThisYear
+                    ? `${statsData.myRatedCountThisYear} rated this year`
+                    : "No rated this year"
                 }
-                subtitle={statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
               />
             </div>
 
-            {/* Top Rated row (cap 5, evenly spaced) — WITH bubble */}
             <TopRatedRow
               title="Top Rated Games This Year"
               items={statsData.topRatedThisYear.map((g) => ({
@@ -1940,23 +2303,17 @@ export default function HomePage() {
               }))}
             />
 
-            <div
-              className="statsGrid2"
-              style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Top Platforms" items={statsData.byPlatform} />
               <TopList title="Top Genres" items={statsData.byGenre} />
             </div>
 
-            <div
-              className="statsGrid2"
-              style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <TopList title="Status Breakdown" items={statsData.byStatus} />
               <TopList title="Ownership Breakdown" items={statsData.byOwnership} />
             </div>
 
-            <TopList title="Year Played (most recent first)" items={statsData.byYearPlayed} max={18} />
+            <YearPlayedBars items={statsData.byYearPlayed} />
 
             <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
               Tip: Use Platform/Genre/Year facets + search, then jump to Stats to see the breakdown of that slice.
@@ -1965,7 +2322,13 @@ export default function HomePage() {
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={dragIds} strategy={rectSortingStrategy}>
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`, gap: 12 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`,
+                  gap: 12,
+                }}
+              >
                 {dragIds.map((id) => {
                   const g = idToGame.get(id);
                   if (!g) return null;
@@ -2043,7 +2406,7 @@ export default function HomePage() {
               ×
             </button>
 
-            <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }} className="modalStack">
+            <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
               <div style={{ width: 260, flex: "0 0 auto" }}>
                 <div
                   style={{
@@ -2056,7 +2419,11 @@ export default function HomePage() {
                   }}
                 >
                   {selectedGame.coverUrl ? (
-                    <img src={selectedGame.coverUrl} alt={selectedGame.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    <img
+                      src={selectedGame.coverUrl}
+                      alt={selectedGame.title}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
                   ) : (
                     <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
                       No cover
@@ -2067,16 +2434,12 @@ export default function HomePage() {
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>{selectedGame.title}</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {selectedGame.platform.slice(0, 6).map((p) => (
-                      <TagPill key={`p-${p}`} text={p} />
-                    ))}
-                    {selectedGame.genres.slice(0, 6).map((g) => (
-                      <TagPill key={`g-${g}`} text={g} />
-                    ))}
+                    {selectedGame.platform.slice(0, 6).map((p) => <TagPill key={`p-${p}`} text={p} />)}
+                    {selectedGame.genres.slice(0, 6).map((g) => <TagPill key={`g-${g}`} text={g} />)}
                     {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
                     {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
                     {selectedGame.status ? <TagPill text={selectedGame.status} /> : null}
-                    {/* REMOVED: Completed pill */}
+                    {/* Completed pill intentionally removed */}
                   </div>
                 </div>
               </div>
@@ -2125,7 +2488,13 @@ export default function HomePage() {
                 <div style={{ marginTop: 10 }}>
                   <Field
                     label="Description"
-                    value={selectedGame.description ? <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div> : ""}
+                    value={
+                      selectedGame.description ? (
+                        <div style={{ whiteSpace: "pre-wrap" }}>{selectedGame.description}</div>
+                      ) : (
+                        ""
+                      )
+                    }
                   />
                 </div>
               </div>
