@@ -1147,11 +1147,11 @@ function DonutChart({
   const total = items.reduce((s, x) => s + x.count, 0);
   const top = items[0];
 
-  const size = 260;
+  const size = 320;
   const cx = size / 2;
   const cy = size / 2;
-  const r = 94;
-  const stroke = 24;
+  const r = 118;
+  const stroke = 26;
 
   let currentAngle = 0;
   const slices = items.map((it, idx) => {
@@ -1198,12 +1198,12 @@ function DonutChart({
         style={{
           marginTop: 12,
           display: "grid",
-          gridTemplateColumns: "280px 1fr",
-          gap: 12,
+          gridTemplateColumns: "1fr 1fr",
+          gap: 14,
           alignItems: "center",
         }}
       >
-        <div style={{ position: "relative", width: 280 }}>
+        <div style={{ position: "relative", width: "100%", maxWidth: 340, justifySelf: "center" }}>
           <svg
             width={size}
             height={size}
