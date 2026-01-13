@@ -4,7 +4,7 @@
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
-       2) “Top Rated Games (Selected Year)” row in Stats
+       2) “Top Rated Games” row in Stats
      (and only if My Rating exists and is NOT 0.0)
    - Rating formatting:
        - show 1 decimal (9.5, 8.0, etc)
@@ -18,12 +18,14 @@
    - Stats layout:
        - Top row has 5 cards: Total, Completed, Now Playing, Queued, Wishlist
        - Second row has 3 cards:
-           Newest Release in View
-           Average IGDB Rating (this year games)
-           My Average Rating (this year games)
+           Newest Release in View (<= today) + cover
+           Average IGDB Rating (this year games) WITH stars
+           My Average Rating (this year games) WITH stars
          (exclude missing/0.0 ratings from averages)
    - NEW (2.2.6):
-       - Top Rated Games defaults to current year, but user can select other years
+       - Top Rated Games: year dropdown inside same module; defaults current year
+       - Top Platforms & Top Genres: interactive donut charts
+       - Year Played: vertical bar chart, last 5 years, grid + labels
 ===================================================================================== */
 
 "use client";
@@ -99,6 +101,19 @@ const COLORS = {
   danger: "#ef4444",
 };
 
+const DONUT_COLORS = [
+  "#60a5fa", // blue
+  "#34d399", // green
+  "#fbbf24", // amber
+  "#f472b6", // pink
+  "#a78bfa", // purple
+  "#fb7185", // rose
+  "#22c55e", // emerald
+  "#38bdf8", // sky
+  "#f97316", // orange
+  "#e879f9", // fuchsia
+];
+
 function norm(v: unknown) {
   return (v ?? "").toString().trim();
 }
@@ -120,11 +135,6 @@ function toDateNum(s: string) {
   if (!v) return 0;
   const t = Date.parse(v);
   return Number.isFinite(t) ? t : 0;
-}
-
-function toNumOrNaN(v: unknown) {
-  const n = Number(norm(v));
-  return Number.isFinite(n) ? n : NaN;
 }
 
 function uniqueSorted(values: string[]) {
@@ -299,6 +309,99 @@ function countByTagList(base: Game[], getTags: (g: Game) => string[]) {
   return map;
 }
 
+/** ===== Rating helpers (bubble + modal + stats cards) ===== */
+function parseMyRating10(v: string) {
+  const n = Number(norm(v));
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return null;
+  return Math.max(0, Math.min(10, n));
+}
+
+function formatRatingLabel(n10: number) {
+  if (Math.abs(n10 - 10) < 1e-9) return "10";
+  return n10.toFixed(1);
+}
+
+function ratingToStars5(n10: number) {
+  const raw5 = n10 / 2;
+  const rounded = Math.round(raw5 * 2) / 2;
+  return Math.max(0, Math.min(5, rounded));
+}
+
+function StarIcon({
+  fillPct,
+  size,
+  color,
+}: {
+  fillPct: number;
+  size: number;
+  color: string;
+}) {
+  const id = useMemo(() => `clip-${Math.random().toString(36).slice(2)}`, []);
+  const w = Math.max(0, Math.min(1, fillPct));
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ display: "block" }}>
+      <defs>
+        <clipPath id={id}>
+          <rect x="0" y="0" width={24 * w} height="24" />
+        </clipPath>
+      </defs>
+
+      <path
+        d="M12 2.5l2.9 6.1 6.7.6-5.1 4.3 1.6 6.6-6.1-3.5-6.1 3.5 1.6-6.6-5.1-4.3 6.7-.6L12 2.5z"
+        fill="none"
+        stroke={color}
+        strokeOpacity={0.55}
+        strokeWidth="1.4"
+      />
+
+      <g clipPath={`url(#${id})`}>
+        <path
+          d="M12 2.5l2.9 6.1 6.7.6-5.1 4.3 1.6 6.6-6.1-3.5-6.1 3.5 1.6-6.6-5.1-4.3 6.7-.6L12 2.5z"
+          fill={color}
+          opacity={0.95}
+        />
+      </g>
+    </svg>
+  );
+}
+
+function StarsAndNumber({
+  rating10,
+  size = 18,
+  numberColor = COLORS.text,
+}: {
+  rating10: number | null;
+  size?: number;
+  numberColor?: string;
+}) {
+  if (!rating10) return <span style={{ color: COLORS.muted }}>—</span>;
+
+  const s5 = ratingToStars5(rating10);
+  const full = Math.floor(s5);
+  const half = s5 - full >= 0.5 ? 1 : 0;
+
+  const stars: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    if (i < full) stars.push(1);
+    else if (i === full && half) stars.push(0.5);
+    else stars.push(0);
+  }
+
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        {stars.map((v, idx) => (
+          <StarIcon key={idx} fillPct={v} size={size} color={COLORS.statNumber} />
+        ))}
+      </div>
+      <div style={{ fontWeight: 950, color: numberColor }}>{formatRatingLabel(rating10)}</div>
+    </div>
+  );
+}
+
+/** ===== Small UI components ===== */
 function CountBadge({ n }: { n: number }) {
   return (
     <span
@@ -669,6 +772,12 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/** ===== Orders ===== */
+function toNumOrNaN(v: unknown) {
+  const n = Number(norm(v));
+  return Number.isFinite(n) ? n : NaN;
+}
+
 function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel: string, bRel: string) {
   const a = toNumOrNaN(aOrderRaw);
   const b = toNumOrNaN(bOrderRaw);
@@ -684,96 +793,6 @@ function compareOrderThenReleaseDesc(aOrderRaw: string, bOrderRaw: string, aRel:
   if (!aHas && bHas) return 1;
 
   return toDateNum(bRel) - toDateNum(aRel);
-}
-
-/** ===== Rating helpers (bubble + modal) ===== */
-function parseMyRating10(v: string) {
-  const n = Number(norm(v));
-  if (!Number.isFinite(n)) return null;
-  if (n <= 0) return null;
-  return Math.max(0, Math.min(10, n));
-}
-
-function formatRatingLabel(n10: number) {
-  if (Math.abs(n10 - 10) < 1e-9) return "10";
-  return n10.toFixed(1);
-}
-
-function ratingToStars5(n10: number) {
-  const raw5 = n10 / 2;
-  const rounded = Math.round(raw5 * 2) / 2;
-  return Math.max(0, Math.min(5, rounded));
-}
-
-function StarIcon({
-  fillPct,
-  size,
-  color,
-}: {
-  fillPct: number; // 0..1
-  size: number;
-  color: string;
-}) {
-  const id = useMemo(() => `clip-${Math.random().toString(36).slice(2)}`, []);
-  const w = Math.max(0, Math.min(1, fillPct));
-
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ display: "block" }}>
-      <defs>
-        <clipPath id={id}>
-          <rect x="0" y="0" width={24 * w} height="24" />
-        </clipPath>
-      </defs>
-
-      <path
-        d="M12 2.5l2.9 6.1 6.7.6-5.1 4.3 1.6 6.6-6.1-3.5-6.1 3.5 1.6-6.6-5.1-4.3 6.7-.6L12 2.5z"
-        fill="none"
-        stroke={color}
-        strokeOpacity={0.55}
-        strokeWidth="1.4"
-      />
-
-      <g clipPath={`url(#${id})`}>
-        <path
-          d="M12 2.5l2.9 6.1 6.7.6-5.1 4.3 1.6 6.6-6.1-3.5-6.1 3.5 1.6-6.6-5.1-4.3 6.7-.6L12 2.5z"
-          fill={color}
-          opacity={0.95}
-        />
-      </g>
-    </svg>
-  );
-}
-
-function StarsAndNumber({
-  rating10,
-  size = 18,
-}: {
-  rating10: number | null;
-  size?: number;
-}) {
-  if (!rating10) return <span style={{ color: COLORS.muted }}>—</span>;
-
-  const s5 = ratingToStars5(rating10);
-  const full = Math.floor(s5);
-  const half = s5 - full >= 0.5 ? 1 : 0;
-
-  const stars: number[] = [];
-  for (let i = 0; i < 5; i++) {
-    if (i < full) stars.push(1);
-    else if (i === full && half) stars.push(0.5);
-    else stars.push(0);
-  }
-
-  return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-        {stars.map((v, idx) => (
-          <StarIcon key={idx} fillPct={v} size={size} color={COLORS.statNumber} />
-        ))}
-      </div>
-      <div style={{ fontWeight: 900, color: COLORS.text }}>{formatRatingLabel(rating10)}</div>
-    </div>
-  );
 }
 
 /** ===== Tiles ===== */
@@ -841,20 +860,12 @@ function SortableTile({
               }}
             />
           ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: COLORS.muted,
-                fontSize: 12,
-              }}
-            >
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
               No cover
             </div>
           )}
 
+          {/* Rating bubble (smaller, darker glass, closer to corner) */}
           {overlayRating != null ? (
             <div
               style={{
@@ -887,77 +898,32 @@ function SortableTile({
   );
 }
 
-/** Stats mode components */
-function StatCard({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {
-  return (
-    <div
-      style={{
-        background: COLORS.panel,
-        border: `1px solid ${COLORS.border}`,
-        borderRadius: 16,
-        padding: 14,
-        minWidth: 0,
-      }}
-    >
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-        {title}
-      </div>
-      <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>{value}</div>
-      {subtitle ? <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>{subtitle}</div> : null}
-    </div>
-  );
-}
-
-function TopList({
+/** ===== Stats UI ===== */
+function StatCard({
   title,
-  items,
-  max = 12,
+  value,
+  subtitle,
+  rightSlot,
 }: {
   title: string;
-  items: Array<{ label: string; count: number }>;
-  max?: number;
+  value: string | number;
+  subtitle?: string;
+  rightSlot?: React.ReactNode;
 }) {
-  const shown = items.slice(0, max);
-  const top = shown[0]?.count || 0;
-
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-        {title}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          {title}
+        </div>
+        {rightSlot ? <div style={{ flex: "0 0 auto" }}>{rightSlot}</div> : null}
       </div>
 
-      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-        {shown.length ? (
-          shown.map((x) => {
-            const pct = top ? Math.max(0.08, x.count / top) : 0.08;
-            return (
-              <div key={x.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 110, color: COLORS.text, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {x.label}
-                </div>
-
-                <div
-                  style={{
-                    flex: 1,
-                    height: 10,
-                    borderRadius: 999,
-                    border: `1px solid ${COLORS.border}`,
-                    background: "rgba(255,255,255,0.04)",
-                    overflow: "hidden",
-                    minWidth: 0,
-                  }}
-                >
-                  <div style={{ height: "100%", width: `${Math.round(pct * 100)}%`, background: COLORS.statNumber, opacity: 0.55 }} />
-                </div>
-
-                <div style={{ width: 34, textAlign: "right", color: COLORS.muted, fontSize: 12, fontWeight: 750 }}>{x.count}</div>
-              </div>
-            );
-          })
-        ) : (
-          <div style={{ color: COLORS.muted, fontSize: 12 }}>No data.</div>
-        )}
+      <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
+        {value}
       </div>
+
+      {subtitle ? <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>{subtitle}</div> : null}
     </div>
   );
 }
@@ -965,14 +931,45 @@ function TopList({
 function TopRatedRow({
   title,
   items,
+  year,
+  yearOptions,
+  onYearChange,
 }: {
   title: string;
   items: Array<{ title: string; coverUrl: string; onClick: () => void; overlayRating?: number | null }>;
+  year: string;
+  yearOptions: string[];
+  onYearChange: (y: string) => void;
 }) {
   return (
     <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14 }}>
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-        {title}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          {title}
+        </div>
+
+        <select
+          value={year}
+          onChange={(e) => onYearChange(e.target.value)}
+          style={{
+            borderRadius: 999,
+            padding: "6px 10px",
+            border: `1px solid ${COLORS.border}`,
+            background: "rgba(255,255,255,0.04)",
+            color: COLORS.text,
+            fontSize: 12,
+            fontWeight: 900,
+            cursor: "pointer",
+          }}
+          aria-label="Select year for Top Rated"
+          title="Select year"
+        >
+          {yearOptions.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "nowrap", alignItems: "stretch" }}>
@@ -997,7 +994,13 @@ function TopRatedRow({
               }}
             >
               {g.coverUrl ? (
-                <img src={g.coverUrl} alt={g.title} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                <img
+                  consider="true"
+                  src={g.coverUrl}
+                  alt={g.title}
+                  loading="lazy"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
               ) : (
                 <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
                   No cover
@@ -1031,9 +1034,321 @@ function TopRatedRow({
             </button>
           ))
         ) : (
-          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games for that year in the current view.</div>
+          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games for this year in the current view.</div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** ===== Donut Chart (interactive hover updates center text) ===== */
+function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180.0;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end = polarToCartesian(cx, cy, r, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
+}
+
+function DonutChart({
+  title,
+  items,
+  centerLabel,
+}: {
+  title: string;
+  items: Array<{ label: string; count: number }>;
+  centerLabel: string; // e.g. "Total Platforms"
+}) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const total = items.reduce((s, x) => s + x.count, 0);
+  const top = items[0];
+
+  const size = 220;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 78;
+  const stroke = 22;
+
+  let currentAngle = 0;
+  const slices = items.map((it, idx) => {
+    const pct = total ? it.count / total : 0;
+    const angle = pct * 360;
+    const start = currentAngle;
+    const end = currentAngle + angle;
+    currentAngle += angle;
+
+    return {
+      ...it,
+      idx,
+      start,
+      end,
+      color: DONUT_COLORS[idx % DONUT_COLORS.length],
+    };
+  });
+
+  const active = hoverIdx != null ? slices[hoverIdx] : null;
+
+  return (
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+        {title}
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "240px 1fr", gap: 14, alignItems: "center" }}>
+        <div style={{ position: "relative", width: 240 }}>
+          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block", margin: "0 auto" }}>
+            {/* track ring */}
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
+
+            {/* slices */}
+            {slices.map((s) => {
+              if (s.count <= 0) return null;
+
+              const path = describeArc(cx, cy, r, s.start, s.end);
+              const isActive = hoverIdx === s.idx;
+
+              return (
+                <path
+                  key={s.label}
+                  d={path}
+                  fill="none"
+                  stroke={s.color}
+                  strokeWidth={stroke}
+                  strokeLinecap="butt"
+                  opacity={isActive ? 1 : 0.9}
+                  onMouseEnter={() => setHoverIdx(s.idx)}
+                  onMouseLeave={() => setHoverIdx(null)}
+                  style={{ cursor: "pointer", filter: isActive ? "drop-shadow(0 10px 18px rgba(0,0,0,0.55))" : "none" }}
+                />
+              );
+            })}
+
+            {/* inner cutout */}
+            <circle cx={cx} cy={cy} r={r - stroke / 2 - 10} fill={COLORS.panel} />
+          </svg>
+
+          {/* center text */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+            }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>{centerLabel}</div>
+              <div style={{ marginTop: 6, color: COLORS.text, fontSize: 28, fontWeight: 950 }}>
+                {active ? active.count : total}
+              </div>
+              <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>
+                {active ? active.label : `Total ${items.length}`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* legend */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+          {items.length ? (
+            items.slice(0, 10).map((it, idx) => {
+              const color = DONUT_COLORS[idx % DONUT_COLORS.length];
+              const isActive = hoverIdx === idx;
+
+              return (
+                <div
+                  key={it.label}
+                  onMouseEnter={() => setHoverIdx(idx)}
+                  onMouseLeave={() => setHoverIdx(null)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "6px 8px",
+                    borderRadius: 12,
+                    border: `1px solid ${COLORS.border}`,
+                    background: isActive ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)",
+                    cursor: "pointer",
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ width: 10, height: 10, borderRadius: 999, background: color, flex: "0 0 auto" }} />
+                  <div
+                    style={{
+                      color: COLORS.text,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      flex: "1 1 auto",
+                      minWidth: 0,
+                    }}
+                    title={it.label}
+                  >
+                    {it.label}
+                  </div>
+                  <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 900, flex: "0 0 auto" }}>{it.count}</div>
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ color: COLORS.muted, fontSize: 12 }}>No data.</div>
+          )}
+
+          {top ? (
+            <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
+              Most common: <span style={{ color: COLORS.text, fontWeight: 900 }}>{top.label}</span> ({top.count})
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** ===== Years Played vertical bar chart (last 5 years) ===== */
+function YearsPlayedChart({
+  items,
+}: {
+  items: Array<{ label: string; count: number }>; // label = year
+}) {
+  // Expect items sorted newest -> oldest; we want last 5 years (most recent 5)
+  const numeric = items
+    .map((x) => ({ ...x, y: Number(x.label) }))
+    .filter((x) => Number.isFinite(x.y))
+    .sort((a, b) => b.y - a.y);
+
+  const last5 = numeric.slice(0, 5).reverse(); // oldest -> newest for left-to-right
+
+  const max = Math.max(1, ...last5.map((x) => x.count));
+  const gridStep = max <= 10 ? 2 : max <= 25 ? 5 : 10;
+  const gridLines: number[] = [];
+  for (let v = 0; v <= max; v += gridStep) gridLines.push(v);
+
+  return (
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+        Year Played (last 5)
+      </div>
+
+      <div style={{ marginTop: 12, position: "relative", height: 220, borderRadius: 14, background: "rgba(255,255,255,0.02)", border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+        {/* grid lines */}
+        {gridLines.map((v) => {
+          const pct = (v / max) * 100;
+          return (
+            <div
+              key={v}
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: `${pct}%`,
+                height: 1,
+                background: "rgba(255,255,255,0.06)",
+              }}
+            >
+              <div style={{ position: "absolute", left: 10, bottom: 4, color: "rgba(255,255,255,0.28)", fontSize: 10, fontWeight: 800 }}>
+                {v}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* bars */}
+        <div style={{ position: "absolute", inset: 0, display: "grid", gridTemplateColumns: `repeat(${Math.max(1, last5.length)}, 1fr)`, gap: 14, padding: "14px 16px", alignItems: "end" }}>
+          {last5.length ? (
+            last5.map((x) => {
+              const hPct = (x.count / max) * 100;
+              return (
+                <div key={x.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                  <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 900 }}>{x.count}</div>
+
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: 72,
+                      height: `${Math.max(6, hPct)}%`,
+                      borderRadius: 12,
+                      background: COLORS.statNumber,
+                      opacity: 0.8,
+                      boxShadow: "0 18px 40px rgba(0,0,0,.35)",
+                    }}
+                    title={`${x.label}: ${x.count}`}
+                  />
+
+                  <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 900 }}>{x.label}</div>
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ color: COLORS.muted, fontSize: 12 }}>No year data.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** ===== Newest release card with cover (<= today) ===== */
+function NewestReleaseCard({
+  title,
+  game,
+}: {
+  title: string;
+  game: { title: string; coverUrl: string; releaseDate: string } | null;
+}) {
+  return (
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
+      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+        {title}
+      </div>
+
+      {game ? (
+        <div style={{ marginTop: 12, display: "flex", gap: 12, alignItems: "center" }}>
+          <div
+            style={{
+              width: 56,
+              height: 84,
+              borderRadius: 12,
+              overflow: "hidden",
+              background: COLORS.card,
+              border: `1px solid ${COLORS.border}`,
+              flex: "0 0 auto",
+              boxShadow: "0 18px 45px rgba(0,0,0,.45)",
+            }}
+          >
+            {game.coverUrl ? (
+              <img
+                src={game.coverUrl}
+                alt={game.title}
+                loading="lazy"
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            ) : (
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 11 }}>
+                —
+              </div>
+            )}
+          </div>
+
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: COLORS.text, fontSize: 14, fontWeight: 950, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {game.title}
+            </div>
+            <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>{game.releaseDate || "—"}</div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 12, color: COLORS.muted, fontSize: 12 }}>No releases in view.</div>
+      )}
     </div>
   );
 }
@@ -1082,9 +1397,9 @@ export default function HomePage() {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
-  // ✅ NEW (2.2.6): Top Rated year selector (defaults to current year)
-  const currentYear = new Date().getFullYear();
-  const [topRatedYear, setTopRatedYear] = useState<string>(String(currentYear));
+  // Top rated year selector (inside module)
+  const currentYear = String(new Date().getFullYear());
+  const [topRatedYear, setTopRatedYear] = useState<string>(currentYear);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -1165,34 +1480,6 @@ export default function HomePage() {
   const allGenres = useMemo(() => uniqueSorted(games.flatMap((g) => g.genres)), [games]);
   const allYearsPlayed = useMemo(() => uniqueSorted(games.flatMap((g) => g.yearPlayed)), [games]);
 
-  // ✅ NEW (2.2.6): years for the dropdown, sorted desc, limited to “reasonable” year values
-  const topRatedYearOptions = useMemo(() => {
-    const years = Array.from(
-      new Set(
-        games
-          .flatMap((g) => g.yearPlayed)
-          .map((y) => y.trim())
-          .filter((y) => /^\d{4}$/.test(y))
-      )
-    )
-      .sort((a, b) => Number(b) - Number(a));
-
-    // Ensure current year is always present as an option
-    const cy = String(currentYear);
-    if (!years.includes(cy)) years.unshift(cy);
-
-    return years;
-  }, [games, currentYear]);
-
-  // Keep selected year valid when data loads
-  useEffect(() => {
-    if (!topRatedYearOptions.length) return;
-    if (!topRatedYearOptions.includes(topRatedYear)) {
-      setTopRatedYear(String(currentYear));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topRatedYearOptions]);
-
   function toggleGenre(genre: string) {
     setSelectedGenres((prev) => (prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]));
   }
@@ -1216,7 +1503,7 @@ export default function HomePage() {
     const base = games.filter((g) => {
       if (query && !g.title.toLowerCase().includes(query)) return false;
 
-      // ✅ Exclude Wishlist games from the primary Games tab
+      // Exclude Wishlist games from the primary Games tab
       if (activeTab === "games" && norm(g.ownership) === "Wishlist") return false;
 
       if (activeTab === "nowPlaying" && norm(g.status) !== "Now Playing") return false;
@@ -1412,14 +1699,6 @@ export default function HomePage() {
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
-    const byStatus = Array.from(countByKey(filtered, (g) => g.status).entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-
-    const byOwnership = Array.from(countByKey(filtered, (g) => g.ownership).entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-
     const byYearPlayed = Array.from(countByTagList(filtered, (g) => g.yearPlayed).entries())
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => {
@@ -1429,13 +1708,21 @@ export default function HomePage() {
         return b.count - a.count || a.label.localeCompare(b.label);
       });
 
-    const newest = filtered
+    const today = Date.now();
+
+    // Newest release <= today (no future dates)
+    const newestUpToToday = filtered
       .slice()
-      .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))
-      .find((g) => Boolean(toDateNum(g.releaseDate)));
+      .filter((g) => {
+        const t = toDateNum(g.releaseDate);
+        if (!t) return false;
+        return t <= today;
+      })
+      .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate))[0];
 
     const thisYear = String(new Date().getFullYear());
 
+    // Averages only for THIS YEAR games (yearPlayed includes current year)
     const thisYearGames = filtered.filter((g) => g.yearPlayed.includes(thisYear));
 
     const igdbRatings = thisYearGames
@@ -1454,33 +1741,17 @@ export default function HomePage() {
       ? Math.round((myRatings10.reduce((s, n) => s + n, 0) / myRatings10.length) * 10) / 10
       : null;
 
-    return {
-      total,
-      completedInView,
-      nowPlayingInView,
-      queuedInView,
-      wishlistInView,
-      byPlatform,
-      byGenre,
-      byStatus,
-      byOwnership,
-      byYearPlayed,
-      newestTitle: newest?.title || "—",
-      newestDate: newest?.releaseDate || "—",
-      avgIgdbThisYear,
-      avgMyThisYear,
-      igdbRatedCountThisYear: igdbRatings.length,
-      myRatedCountThisYear: myRatings10.length,
-    };
-  }, [filtered]);
+    // Year options for Top Rated dropdown (unique yearPlayed values, most recent first)
+    const yearOptions = uniqueSorted(filtered.flatMap((g) => g.yearPlayed))
+      .filter((y) => /^\d{4}$/.test(y))
+      .sort((a, b) => Number(b) - Number(a));
 
-  // ✅ NEW (2.2.6): Top Rated list is computed using selected year
-  const topRatedSelectedYearGames = useMemo(() => {
-    const yearStr = topRatedYear || String(currentYear);
+    const effectiveYear = yearOptions.includes(topRatedYear) ? topRatedYear : thisYear;
 
-    const yearGames = filtered.filter((g) => g.yearPlayed.includes(yearStr));
+    // Top Rated Games for selected year — uses My Rating only (exclude missing/0)
+    const yearGames = filtered.filter((g) => g.yearPlayed.includes(effectiveYear));
 
-    return yearGames
+    const topRatedForYear = yearGames
       .map((g) => ({ g, r: parseMyRating10(g.myRating) }))
       .filter((x) => x.r != null)
       .sort(
@@ -1491,7 +1762,29 @@ export default function HomePage() {
       )
       .slice(0, 5)
       .map((x) => x.g);
-  }, [filtered, topRatedYear, currentYear]);
+
+    return {
+      total,
+      completedInView,
+      nowPlayingInView,
+      queuedInView,
+      wishlistInView,
+      byPlatform,
+      byGenre,
+      byYearPlayed,
+      newestGame: newestUpToToday
+        ? { title: newestUpToToday.title, coverUrl: newestUpToToday.coverUrl, releaseDate: newestUpToToday.releaseDate }
+        : null,
+      avgIgdbThisYear,
+      avgMyThisYear,
+      igdbRatedCountThisYear: igdbRatings.length,
+      myRatedCountThisYear: myRatings10.length,
+      yearOptions,
+      effectiveYear,
+      topRatedForYear,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, topRatedYear]);
 
   function SyncBar() {
     return (
@@ -1536,17 +1829,7 @@ export default function HomePage() {
               </div>
             </div>
             {syncState === "error" && syncMsg ? (
-              <div
-                style={{
-                  color: COLORS.danger,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  marginTop: 4,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
+              <div style={{ color: COLORS.danger, fontSize: 11, fontWeight: 800, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {syncMsg}
               </div>
             ) : null}
@@ -1596,6 +1879,22 @@ export default function HomePage() {
     </div>
   );
 
+  // Mobile tabs: 3 on first row, 3 on second row
+  const mobileTabs = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
+        <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
+        <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+        <TabButton label="Wishlist" active={activeTab === "wishlist"} onClick={() => setActiveTab("wishlist")} />
+        <TabButton label="Completed" active={activeTab === "completed"} onClick={() => setActiveTab("completed")} />
+        <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
       <style>{`
@@ -1625,6 +1924,9 @@ export default function HomePage() {
           }
           .mobileOnly { display: block !important; }
           .desktopOnly { display: none !important; }
+          .statsGrid5 { grid-template-columns: 1fr !important; }
+          .statsGrid3 { grid-template-columns: 1fr !important; }
+          .statsGrid2 { grid-template-columns: 1fr !important; }
         }
         .mobileOnly { display: none; }
       `}</style>
@@ -1780,6 +2082,7 @@ export default function HomePage() {
       </aside>
 
       <main style={{ flex: 1, padding: 18 }}>
+        {/* Mobile topbar */}
         <div className="mobileTopbar mobileOnly">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <button
@@ -1797,12 +2100,18 @@ export default function HomePage() {
             >
               Filters
             </button>
-            <div style={{ fontSize: 12, color: COLORS.muted }}>{topRightCount}</div>
+
+            {/* Keep total count on mobile top-right */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>Items</div>
+              <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 950 }}>{topRightCount}</div>
+            </div>
           </div>
         </div>
 
+        {/* Desktop tabs + bubble; Mobile uses 2-line tabs and no bubble */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div className="desktopOnly" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
             <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} />
             <TabButton label="Queued" active={activeTab === "queued"} onClick={() => setActiveTab("queued")} />
@@ -1811,7 +2120,12 @@ export default function HomePage() {
             <TabButton label="Stats" active={activeTab === "stats"} onClick={() => setActiveTab("stats")} />
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="mobileOnly" style={{ width: "100%" }}>
+            {mobileTabs}
+          </div>
+
+          <div className="desktopOnly" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* Edit Mode: desktop only */}
             {(activeTab === "queued" || activeTab === "wishlist") && (
               <button
                 onClick={() => setEditMode((v) => !v)}
@@ -1839,7 +2153,15 @@ export default function HomePage() {
           <div>Loading…</div>
         ) : activeTab === "stats" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12 }}>
+            {/* Top row: 5 stats (stacks on mobile via CSS) */}
+            <div
+              className="statsGrid5"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
               <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
               <StatCard title="Completed" value={statsData.completedInView} />
               <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
@@ -1847,51 +2169,49 @@ export default function HomePage() {
               <StatCard title="Wishlist" value={statsData.wishlistInView} />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
-              <StatCard title="Newest release in view" value={statsData.newestTitle} subtitle={statsData.newestDate} />
-              <StatCard
-                title="Average IGDB Rating (this year)"
-                value={statsData.avgIgdbThisYear ?? "—"}
-                subtitle={statsData.avgIgdbThisYear ? `${statsData.igdbRatedCountThisYear} rated this year` : "No rated this year"}
-              />
-              <StatCard
-                title="My Average Rating (this year)"
-                value={statsData.avgMyThisYear ?? "—"}
-                subtitle={statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
-              />
-            </div>
-
-            {/* ✅ NEW (2.2.6): year selector for Top Rated */}
+            {/* Second row: 3 stats (stacks on mobile via CSS) */}
             <div
+              className="statsGrid3"
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
                 gap: 12,
-                padding: "10px 12px",
-                borderRadius: 16,
-                background: COLORS.panel,
-                border: `1px solid ${COLORS.border}`,
               }}
             >
-              <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>
-                Top Rated Year
+              <NewestReleaseCard title="Newest release in view" game={statsData.newestGame} />
+
+              <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
+                <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Average IGDB Rating (this year)
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <StarsAndNumber rating10={statsData.avgIgdbThisYear != null ? Math.max(0, Math.min(10, statsData.avgIgdbThisYear)) : null} size={19} />
+                </div>
+                <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
+                  {statsData.avgIgdbThisYear ? `${statsData.igdbRatedCountThisYear} rated this year` : "No rated this year"}
+                </div>
               </div>
 
-              <div style={{ width: 160 }}>
-                <SmallSelect value={topRatedYear} onChange={setTopRatedYear}>
-                  {topRatedYearOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </SmallSelect>
+              <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
+                <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  My Average Rating (this year)
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <StarsAndNumber rating10={statsData.avgMyThisYear != null ? Math.max(0, Math.min(10, statsData.avgMyThisYear)) : null} size={19} />
+                </div>
+                <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
+                  {statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
+                </div>
               </div>
             </div>
 
+            {/* Top Rated row (cap 5) — year dropdown INSIDE module */}
             <TopRatedRow
-              title={`Top Rated Games (${topRatedYear})`}
-              items={topRatedSelectedYearGames.map((g) => ({
+              title="Top Rated Games"
+              year={statsData.effectiveYear}
+              yearOptions={statsData.yearOptions.length ? statsData.yearOptions : [currentYear]}
+              onYearChange={(y) => setTopRatedYear(y)}
+              items={statsData.topRatedForYear.map((g) => ({
                 title: g.title,
                 coverUrl: g.coverUrl,
                 onClick: () => setSelectedGame(g),
@@ -1899,17 +2219,21 @@ export default function HomePage() {
               }))}
             />
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-              <TopList title="Top Platforms" items={statsData.byPlatform} />
-              <TopList title="Top Genres" items={statsData.byGenre} />
+            {/* Donuts */}
+            <div
+              className="statsGrid2"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 12,
+              }}
+            >
+              <DonutChart title="Top Platforms" items={statsData.byPlatform} centerLabel="Total Platforms" />
+              <DonutChart title="Top Genres" items={statsData.byGenre} centerLabel="Total Genres" />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-              <TopList title="Status Breakdown" items={statsData.byStatus} />
-              <TopList title="Ownership Breakdown" items={statsData.byOwnership} />
-            </div>
-
-            <TopList title="Year Played (most recent first)" items={statsData.byYearPlayed} max={18} />
+            {/* Years played vertical chart */}
+            <YearsPlayedChart items={statsData.byYearPlayed} />
 
             <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
               Tip: Use Platform/Genre/Year facets + search, then jump to Stats to see the breakdown of that slice.
@@ -1945,6 +2269,7 @@ export default function HomePage() {
         )}
       </main>
 
+      {/* Modal */}
       {selectedGame && (
         <div
           role="dialog"
@@ -1996,7 +2321,7 @@ export default function HomePage() {
               ×
             </button>
 
-            <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <div className="modalStack" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
               <div style={{ width: 260, flex: "0 0 auto" }}>
                 <div
                   style={{
@@ -2029,6 +2354,7 @@ export default function HomePage() {
                     {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
                     {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
                     {selectedGame.status ? <TagPill text={selectedGame.status} /> : null}
+                    {/* REMOVED: Completed pill */}
                   </div>
                 </div>
               </div>
@@ -2059,11 +2385,13 @@ export default function HomePage() {
 
                   <Field
                     label="IGDB Rating"
-                    value={(() => {
-                      const n = Number(norm(selectedGame.igdbRating));
-                      const n10 = Number.isFinite(n) && n > 0 ? Math.max(0, Math.min(10, n)) : null;
-                      return <StarsAndNumber rating10={n10} size={19} />;
-                    })()}
+                    value={
+                      (() => {
+                        const n = Number(norm(selectedGame.igdbRating));
+                        const n10 = Number.isFinite(n) && n > 0 ? Math.max(0, Math.min(10, n)) : null;
+                        return <StarsAndNumber rating10={n10} size={19} />;
+                      })()
+                    }
                   />
                   <Field label="My Rating" value={<StarsAndNumber rating10={parseMyRating10(selectedGame.myRating)} size={19} />} />
 
@@ -2082,6 +2410,12 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+
+            <style>{`
+              @media (max-width: 900px) {
+                .modalStack { flex-direction: column !important; }
+              }
+            `}</style>
           </div>
         </div>
       )}
