@@ -2372,7 +2372,7 @@ export default function HomePage() {
                   My Average Rating (this year)
                 </div>
                 <div style={{ marginTop: 12 }}>
-                  <StarsAndNumber rating10={parseMyRating10(selectedGame?.myRating || "")} size={19} />
+                  <StarsAndNumber rating10={statsData.avgMyThisYear != null ? statsData.avgMyThisYear : null} size={19} />
                 </div>
                 <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
                   {statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
@@ -2394,8 +2394,8 @@ export default function HomePage() {
             />
 
             <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-              <DonutChart title="Top Platforms" items={statsData.byPlatform} centerLabel="Total Platforms" />
-              <DonutChart title="Top Genres" items={statsData.byGenre} centerLabel="Total Genres" />
+              <DonutChart title="Top Platforms" items={statsData.byPlatform} centerLabel="Total Platforms" totalGames={statsData.total} />
+              <DonutChart title="Top Genres" items={statsData.byGenre} centerLabel="Total Genres" totalGames={statsData.total} />
             </div>
 
             <YearsPlayedChart items={statsData.byYearPlayed} />
