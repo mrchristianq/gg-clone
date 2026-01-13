@@ -1880,16 +1880,8 @@ export default function HomePage() {
       </div>
     </div>
   );
-
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
-      {/* ...rest of your file remains identical from your paste... */}
-      {/* NOTE: I didn’t re-paste the remaining ~300 lines here to avoid another timeout.
-         If you want, tell me what error message you got and I’ll paste the full remainder too,
-         but the only actual compile-breaker I see is the "consider" attribute on <img>. */}
-    </div>
-  );
-}
       <style>{`
         aside::-webkit-scrollbar { display: none; }
 
@@ -2105,7 +2097,6 @@ export default function HomePage() {
               Filters
             </button>
 
-            {/* Keep total count on mobile top-right */}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>Items</div>
               <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 950 }}>{topRightCount}</div>
@@ -2113,7 +2104,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Desktop tabs + bubble; Mobile uses 2-line tabs and no bubble */}
+        {/* Desktop tabs + bubble; Mobile uses 2-line tabs */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
           <div className="desktopOnly" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <TabButton label="Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} />
@@ -2129,7 +2120,6 @@ export default function HomePage() {
           </div>
 
           <div className="desktopOnly" style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Edit Mode: desktop only */}
             {(activeTab === "queued" || activeTab === "wishlist") && (
               <button
                 onClick={() => setEditMode((v) => !v)}
@@ -2157,15 +2147,7 @@ export default function HomePage() {
           <div>Loading…</div>
         ) : activeTab === "stats" ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Top row: 5 stats (stacks on mobile via CSS) */}
-            <div
-              className="statsGrid5"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div className="statsGrid5" style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12 }}>
               <StatCard title="Total games" value={statsData.total} subtitle="Respects facets + search" />
               <StatCard title="Completed" value={statsData.completedInView} />
               <StatCard title="Now Playing" value={statsData.nowPlayingInView} />
@@ -2173,15 +2155,7 @@ export default function HomePage() {
               <StatCard title="Wishlist" value={statsData.wishlistInView} />
             </div>
 
-            {/* Second row: 3 stats (stacks on mobile via CSS) */}
-            <div
-              className="statsGrid3"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div className="statsGrid3" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
               <NewestReleaseCard title="Newest release in view" game={statsData.newestGame} />
 
               <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
@@ -2204,10 +2178,7 @@ export default function HomePage() {
                   My Average Rating (this year)
                 </div>
                 <div style={{ marginTop: 12 }}>
-                  <StarsAndNumber
-                    rating10={statsData.avgMyThisYear != null ? Math.max(0, Math.min(10, statsData.avgMyThisYear)) : null}
-                    size={19}
-                  />
+                  <StarsAndNumber rating10={parseMyRating10(selectedGame?.myRating || "")} size={19} />
                 </div>
                 <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
                   {statsData.avgMyThisYear ? `${statsData.myRatedCountThisYear} rated this year` : "No rated this year"}
@@ -2215,7 +2186,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Top Rated row (cap 5) — year dropdown INSIDE module */}
             <TopRatedRow
               title="Top Rated Games"
               year={statsData.effectiveYear}
@@ -2229,25 +2199,12 @@ export default function HomePage() {
               }))}
             />
 
-            {/* Donuts */}
-            <div
-              className="statsGrid2"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <DonutChart title="Top Platforms" items={statsData.byPlatform} centerLabel="Total Platforms" />
               <DonutChart title="Top Genres" items={statsData.byGenre} centerLabel="Total Genres" />
             </div>
 
-            {/* Years played vertical chart */}
             <YearsPlayedChart items={statsData.byYearPlayed} />
-
-            <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 2 }}>
-              Tip: Use Platform/Genre/Year facets + search, then jump to Stats to see the breakdown of that slice.
-            </div>
           </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -2257,8 +2214,7 @@ export default function HomePage() {
                   const g = idToGame.get(id);
                   if (!g) return null;
 
-                  const showCompletedBubble = activeTab === "completed";
-                  const overlayRating = showCompletedBubble ? parseMyRating10(g.myRating) : null;
+                  const overlayRating = activeTab === "completed" ? parseMyRating10(g.myRating) : null;
 
                   return (
                     <SortableTile
@@ -2279,7 +2235,6 @@ export default function HomePage() {
         )}
       </main>
 
-      {/* Modal */}
       {selectedGame && (
         <div
           role="dialog"
@@ -2368,7 +2323,6 @@ export default function HomePage() {
                     {selectedGame.ownership ? <TagPill text={selectedGame.ownership} /> : null}
                     {selectedGame.format ? <TagPill text={selectedGame.format} /> : null}
                     {selectedGame.status ? <TagPill text={selectedGame.status} /> : null}
-                    {/* REMOVED: Completed pill */}
                   </div>
                 </div>
               </div>
