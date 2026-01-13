@@ -1142,10 +1142,10 @@ function DonutChart({
             <div style={{ textAlign: "center" }}>
               <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>{centerLabel}</div>
               <div style={{ marginTop: 6, color: COLORS.text, fontSize: 28, fontWeight: 950 }}>
-                {active ? active.count : total}
+                {active ? active.count : filteredGames.length}
               </div>
               <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>
-                {active ? active.label : `Total ${items.length}`}
+                {active ? active.label : "Total Games"}
               </div>
             </div>
           </div>
@@ -1233,61 +1233,43 @@ function YearsPlayedChart({
         Year Played (last 5)
       </div>
 
-      <div style={{ marginTop: 12, position: "relative", height: 220, borderRadius: 14, background: "rgba(255,255,255,0.02)", border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
-        {gridLines.map((v) => {
-          const pct = (v / max) * 100;
-          return (
-            <div
-              key={v}
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: `${pct}%`,
-                height: 1,
-                background: "rgba(255,255,255,0.06)",
-              }}
-            >
-              <div style={{ position: "absolute", left: 10, bottom: 4, color: "rgba(255,255,255,0.28)", fontSize: 10, fontWeight: 800 }}>
-                {v}
-              </div>
-            </div>
-          );
-        })}
-
-        <div style={{ position: "absolute", inset: 0, display: "grid", gridTemplateColumns: `repeat(${Math.max(1, last5.length)}, 1fr)`, gap: 14, padding: "14px 16px", alignItems: "end" }}>
-          {last5.length ? (
-            last5.map((x) => {
-              const hPct = (x.count / max) * 100;
-              return (
-                <div key={x.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                  <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 900 }}>{x.count}</div>
-
-                  <div
-                    style={{
-                      width: "100%",
-                      maxWidth: 72,
-                      height: `${Math.max(6, hPct)}%`,
-                      borderRadius: 12,
-                      background: COLORS.statNumber,
-                      opacity: 0.8,
-                      boxShadow: "0 18px 40px rgba(0,0,0,.35)",
-                    }}
-                    title={`${x.label}: ${x.count}`}
-                  />
-
-                  <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 900 }}>{x.label}</div>
-                </div>
-              );
-            })
-          ) : (
-            <div style={{ color: COLORS.muted, fontSize: 12 }}>No year data.</div>
-          )}
-        </div>
+      {gridLines.map((v) => {
+  const pct = (v / max) * 100;
+  return (
+    <div key={v} style={{ position: "absolute", left: 0, right: 0, bottom: `${pct}%`, height: 1, background: "rgba(255,255,255,0.06)" }}>
+      <div style={{ position: "absolute", left: 10, bottom: 4, color: "rgba(255,255,255,0.28)", fontSize: 10, fontWeight: 800 }}>
+        {v}
       </div>
     </div>
   );
-}
+})}
+<div style={{ position: "absolute", inset: 0, display: "grid", gridTemplateColumns: `repeat(${Math.max(1, last5.length)}, 1fr)`, gap: 14, padding: "14px 16px", alignItems: "end" }}>
+  {last5.length ? (
+    last5.map((x) => {
+      const hPct = (x.count / max) * 100;
+      return (
+        <div key={x.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 900 }}>{x.count}</div>
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 72,
+              height: `${Math.max(6, hPct)}%`,
+              borderRadius: 12,
+              background: COLORS.statNumber,
+              opacity: 0.8,
+              boxShadow: "0 18px 40px rgba(0,0,0,.35)",
+            }}
+            title={`${x.label}: ${x.count}`}
+          />
+          <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 900 }}>{x.label}</div>
+        </div>
+      );
+    })
+  ) : (
+    <div style={{ color: COLORS.muted, fontSize: 12 }}>No year data.</div>
+  )}
+</div>
 
 /** ===== Newest release card with cover (<= today) ===== */
 function NewestReleaseCard({
