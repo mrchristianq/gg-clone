@@ -694,9 +694,9 @@ function TabButton({
         background: "transparent",
         color: COLORS.text,
         cursor: "pointer",
-        fontSize: compact ? 13 : 16,
+        fontSize: compact ? 12 : 16,
         fontWeight: 900,
-        padding: compact ? "6px 6px" : "8px 6px",
+        padding: compact ? "4px 4px" : "8px 6px",
         position: "relative",
         opacity: active ? 1 : 0.72,
         whiteSpace: "nowrap",
@@ -1814,7 +1814,7 @@ export default function HomePage() {
     const apply = () => {
       const m = mq.matches;
       setIsMobile(m);
-      setTileSize(m ? 75 : 120);
+      setTileSize(m ? 80 : 120);
     };
 
     apply();
@@ -2318,15 +2318,7 @@ export default function HomePage() {
     : { display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 };
 
   const mobileTabs = (
-    <div
-      style={{
-        display: "flex",
-        gap: 10,
-        overflowX: "auto",
-        paddingBottom: 4,
-        WebkitOverflowScrolling: "touch",
-      }}
-    >
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       <TabButton label="Home" active={activeTab === "home"} onClick={() => setActiveTab("home")} compact />
       <TabButton label="All Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} compact />
       <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} compact />
@@ -2340,6 +2332,8 @@ export default function HomePage() {
     <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
       <style>{`
         aside::-webkit-scrollbar { display: none; }
+        body::-webkit-scrollbar { display: none; }
+        body { scrollbar-width: none; }
 
         @media (max-width: 900px) {
           .sidebar {
