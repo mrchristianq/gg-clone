@@ -984,70 +984,137 @@ function TopRatedRow({
         </select>
       </div>
 
-      <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "nowrap", alignItems: "stretch" }}>
-        {items.length ? (
-          items.map((g, i) => (
-            <button
-              key={`${g.title}-${i}`}
-              onClick={g.onClick}
-              title={g.title}
-              style={{
-                flex: "1 1 0",
-                minWidth: 0,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.card,
-                borderRadius: 14,
-                overflow: "hidden",
-                padding: 0,
-                cursor: "pointer",
-                boxShadow: "0 18px 45px rgba(0,0,0,.45)",
-                aspectRatio: "2 / 3",
-                position: "relative",
-              }}
-            >
-              {g.coverUrl ? (
-                <img
-                  src={g.coverUrl}
-                  alt={g.title}
-                  loading="lazy"
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              ) : (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
-                  No cover
-                </div>
-              )}
+      {items.length ? (
+        <>
+          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "nowrap", alignItems: "stretch" }}>
+            {items.slice(0, 5).map((g, i) => (
+              <button
+                key={`${g.title}-${i}`}
+                onClick={g.onClick}
+                title={g.title}
+                style={{
+                  flex: "1 1 0",
+                  minWidth: 0,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.card,
+                  borderRadius: 14,
+                  overflow: "hidden",
+                  padding: 0,
+                  cursor: "pointer",
+                  boxShadow: "0 18px 45px rgba(0,0,0,.45)",
+                  aspectRatio: "2 / 3",
+                  position: "relative",
+                }}
+              >
+                {g.coverUrl ? (
+                  <img
+                    src={g.coverUrl}
+                    alt={g.title}
+                    loading="lazy"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                ) : (
+                  <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+                    No cover
+                  </div>
+                )}
 
-              {g.overlayRating != null ? (
-                <div
+                {g.overlayRating != null ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      padding: "3px 6px",
+                      borderRadius: 10,
+                      background: "rgba(5,10,18,0.55)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      backdropFilter: "blur(8px)",
+                      WebkitBackdropFilter: "blur(8px)",
+                      color: "rgba(255,255,255,0.92)",
+                      fontSize: 11,
+                      fontWeight: 950,
+                      letterSpacing: "0.02em",
+                      lineHeight: 1,
+                      boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    {formatRatingLabel(g.overlayRating)}
+                  </div>
+                ) : null}
+              </button>
+            ))}
+          </div>
+
+          {items.length > 5 ? (
+            <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "nowrap", alignItems: "stretch" }}>
+              {items.slice(5, 10).map((g, i) => (
+                <button
+                  key={`${g.title}-row2-${i}`}
+                  onClick={g.onClick}
+                  title={g.title}
                   style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 6,
-                    padding: "3px 6px",
-                    borderRadius: 10,
-                    background: "rgba(5,10,18,0.55)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    backdropFilter: "blur(8px)",
-                    WebkitBackdropFilter: "blur(8px)",
-                    color: "rgba(255,255,255,0.92)",
-                    fontSize: 11,
-                    fontWeight: 950,
-                    letterSpacing: "0.02em",
-                    lineHeight: 1,
-                    boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
-                    pointerEvents: "none",
+                    flex: "1 1 0",
+                    minWidth: 0,
+                    border: `1px solid ${COLORS.border}`,
+                    background: COLORS.card,
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    padding: 0,
+                    cursor: "pointer",
+                    boxShadow: "0 18px 45px rgba(0,0,0,.45)",
+                    aspectRatio: "2 / 3",
+                    position: "relative",
                   }}
                 >
-                  {formatRatingLabel(g.overlayRating)}
-                </div>
-              ) : null}
-            </button>
-          ))
-        ) : (
-          <div style={{ color: COLORS.muted, fontSize: 12 }}>No rated games for this year in the current view.</div>
-        )}
-      </div>
+                  {g.coverUrl ? (
+                    <img
+                      src={g.coverUrl}
+                      alt={g.title}
+                      loading="lazy"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : (
+                    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+                      No cover
+                    </div>
+                  )}
+
+                  {g.overlayRating != null ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        right: 6,
+                        padding: "3px 6px",
+                        borderRadius: 10,
+                        background: "rgba(5,10,18,0.55)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        backdropFilter: "blur(8px)",
+                        WebkitBackdropFilter: "blur(8px)",
+                        color: "rgba(255,255,255,0.92)",
+                        fontSize: 11,
+                        fontWeight: 950,
+                        letterSpacing: "0.02em",
+                        lineHeight: 1,
+                        boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {formatRatingLabel(g.overlayRating)}
+                    </div>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div style={{ marginTop: 12, color: COLORS.muted, fontSize: 12 }}>
+          No rated games for this year in the current view.
+        </div>
+      )}
     </div>
   );
 }
@@ -1080,11 +1147,11 @@ function DonutChart({
   const total = items.reduce((s, x) => s + x.count, 0);
   const top = items[0];
 
-  const size = 220;
+  const size = 260;
   const cx = size / 2;
   const cy = size / 2;
-  const r = 78;
-  const stroke = 22;
+  const r = 94;
+  const stroke = 24;
 
   let currentAngle = 0;
   const slices = items.map((it, idx) => {
@@ -1131,12 +1198,12 @@ function DonutChart({
         style={{
           marginTop: 12,
           display: "grid",
-          gridTemplateColumns: "240px 1fr",
-          gap: 14,
+          gridTemplateColumns: "280px 1fr",
+          gap: 12,
           alignItems: "center",
         }}
       >
-        <div style={{ position: "relative", width: 240 }}>
+        <div style={{ position: "relative", width: 280 }}>
           <svg
             width={size}
             height={size}
@@ -1215,7 +1282,7 @@ function DonutChart({
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
           {items.length ? (
             items.slice(0, 10).map((it, idx) => {
               const color = DONUT_COLORS[idx % DONUT_COLORS.length];
@@ -1230,7 +1297,7 @@ function DonutChart({
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
-                    padding: "6px 8px",
+                    padding: "4px 8px",
                     borderRadius: 12,
                     border: `1px solid ${COLORS.border}`,
                     background: isActive
@@ -1282,7 +1349,7 @@ function DonutChart({
           )}
 
           {top ? (
-            <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
+            <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
               Most common:{" "}
               <span style={{ color: COLORS.text, fontWeight: 900 }}>
                 {top.label}
@@ -1329,7 +1396,7 @@ function YearsPlayedChart({ items }: { items: Array<{ label: string; count: numb
           textTransform: "uppercase",
         }}
       >
-        Year Played (last 5)
+        Games Played Per Year (Last 5 Years)
       </div>
 
       <div
@@ -1408,7 +1475,7 @@ function YearsPlayedChart({ items }: { items: Array<{ label: string; count: numb
                       width: "100%",
                       maxWidth: 72,
                       height: `${Math.max(6, hPct)}%`,
-                      borderRadius: 12,
+                      borderRadius: 6,
                       background: COLORS.statNumber,
                       opacity: 0.8,
                       boxShadow: "0 18px 40px rgba(0,0,0,.35)",
@@ -1934,7 +2001,7 @@ export default function HomePage() {
           toDateNum(b.g.releaseDate) - toDateNum(a.g.releaseDate) ||
           a.g.title.localeCompare(b.g.title)
       )
-      .slice(0, 5)
+      .slice(0, 10)
       .map((x) => x.g);
 
     return {
