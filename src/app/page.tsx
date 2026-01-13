@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.2.8
+   Version: 3.0.0
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -30,6 +30,11 @@
        - Donut chart center total now shows TOTAL GAMES IN VIEW (not inflated by multi-tags)
        - Year Played chart now renders bars (restored positioned container)
        - My Average Rating card now uses avgMyThisYear (not selectedGame)
+   - NEW (3.0.0):
+       - Home tab with Now Playing, Recently Completed, Upcoming, New Releases sections
+       - Upcoming shows countdown dates; other Home rows hide dates
+       - Mobile layout updates: smaller tiles, 4-per-row Home/grid, single-row tabs
+       - Home rows capped to 5 items on desktop, 4 on mobile
 ===================================================================================== */
 
 "use client";
@@ -83,7 +88,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "2.2.8";
+const VERSION = "3.0.0";
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -694,12 +699,13 @@ function TabButton({
         background: "transparent",
         color: COLORS.text,
         cursor: "pointer",
-        fontSize: compact ? 12 : 16,
+        fontSize: compact ? 11 : 16,
         fontWeight: 900,
-        padding: compact ? "4px 4px" : "8px 6px",
+        padding: compact ? "3px 4px" : "8px 6px",
         position: "relative",
         opacity: active ? 1 : 0.72,
         whiteSpace: "nowrap",
+        ...(compact ? { flex: "1 1 0", textAlign: "center" } : null),
       }}
     >
       {label}
@@ -2322,7 +2328,7 @@ export default function HomePage() {
   const homeCoverSizeTight = isMobile ? "100%" : 140;
 
   const mobileTabs = (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
       <TabButton label="Home" active={activeTab === "home"} onClick={() => setActiveTab("home")} compact />
       <TabButton label="All Games" active={activeTab === "games"} onClick={() => setActiveTab("games")} compact />
       <TabButton label="Now Playing" active={activeTab === "nowPlaying"} onClick={() => setActiveTab("nowPlaying")} compact />
