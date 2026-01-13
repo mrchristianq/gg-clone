@@ -2315,7 +2315,11 @@ export default function HomePage() {
 
   const homeRowStyle: React.CSSProperties = isMobile
     ? { display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))`, gap: 10 }
-    : { display: "flex", gap: 14, overflowX: "auto", paddingBottom: 4 };
+    : { display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4 };
+
+  const homeMaxItems = isMobile ? 4 : 5;
+  const homeCoverSize = isMobile ? "100%" : 150;
+  const homeCoverSizeTight = isMobile ? "100%" : 140;
 
   const mobileTabs = (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2601,12 +2605,12 @@ export default function HomePage() {
             <HomeSection title="Now Playing">
               <div style={homeRowStyle}>
                 {homeData.nowPlaying.length ? (
-                  homeData.nowPlaying.slice(0, 5).map((g, i) => (
+                  homeData.nowPlaying.slice(0, homeMaxItems).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      size={isMobile ? "100%" : 130}
+                      size={homeCoverSize}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2619,12 +2623,12 @@ export default function HomePage() {
             <HomeSection title="Recently Completed">
               <div style={homeRowStyle}>
                 {homeData.recentlyCompleted.length ? (
-                  homeData.recentlyCompleted.slice(0, 5).map((g, i) => (
+                  homeData.recentlyCompleted.slice(0, homeMaxItems).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      size={isMobile ? "100%" : 120}
+                      size={homeCoverSizeTight}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2637,13 +2641,13 @@ export default function HomePage() {
             <HomeSection title="Upcoming">
               <div style={homeRowStyle}>
                 {homeData.upcomingWishlist.length ? (
-                  homeData.upcomingWishlist.slice(0, 5).map((g, i) => (
+                  homeData.upcomingWishlist.slice(0, homeMaxItems).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
                       meta={g.releaseDate ? formatCountdown(g.releaseDate) : undefined}
-                      size={isMobile ? "100%" : 120}
+                      size={homeCoverSizeTight}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
@@ -2656,12 +2660,12 @@ export default function HomePage() {
             <HomeSection title="New Releases">
               <div style={homeRowStyle}>
                 {homeData.recentlyReleased.length ? (
-                  homeData.recentlyReleased.slice(0, 5).map((g, i) => (
+                  homeData.recentlyReleased.slice(0, homeMaxItems).map((g, i) => (
                     <HomeTile
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      size={isMobile ? "100%" : 120}
+                      size={homeCoverSizeTight}
                       onClick={() => setSelectedGame(g)}
                     />
                   ))
