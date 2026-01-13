@@ -2630,6 +2630,7 @@ export default function HomePage() {
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
+                      meta={g.releaseDate ? formatCountdown(g.releaseDate) : undefined}
                       size={isMobile ? "100%" : 120}
                       onClick={() => setSelectedGame(g)}
                     />
