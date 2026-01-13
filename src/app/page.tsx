@@ -1069,12 +1069,10 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
 function DonutChart({
   title,
   items,
-  centerLabel,
   totalGames,
 }: {
   title: string;
   items: Array<{ label: string; count: number }>;
-  centerLabel: string;
   totalGames: number;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -1201,13 +1199,8 @@ function DonutChart({
           >
             <div style={{ textAlign: "center" }}>
               <div
-                style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}
-              >
-                {centerLabel}
-              </div>
-              <div
                 style={{
-                  marginTop: 6,
+                  marginTop: 2,
                   color: COLORS.text,
                   fontSize: 28,
                   fontWeight: 950,
@@ -1215,9 +1208,7 @@ function DonutChart({
               >
                 {active ? active.count : totalGames}
               </div>
-              <div
-                style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}
-              >
+              <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>
                 {active ? active.label : "Total Games"}
               </div>
             </div>
@@ -1263,9 +1254,9 @@ function DonutChart({
                       color: COLORS.text,
                       fontSize: 12,
                       fontWeight: 800,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+                      whiteSpace: "normal",
+                      overflow: "visible",
+                      textOverflow: "clip",
                       flex: "1 1 auto",
                       minWidth: 0,
                     }}
@@ -1403,6 +1394,8 @@ function YearsPlayedChart({ items }: { items: Array<{ label: string; count: numb
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
+                    height: "100%",
+                    justifyContent: "flex-end",
                     gap: 8,
                   }}
                 >
@@ -2393,9 +2386,9 @@ export default function HomePage() {
               }))}
             />
 
-            <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-              <DonutChart title="Top Platforms" items={statsData.byPlatform} centerLabel="Total Platforms" totalGames={statsData.total} />
-              <DonutChart title="Top Genres" items={statsData.byGenre} centerLabel="Total Genres" totalGames={statsData.total} />
+            <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12 }}>
+              <DonutChart title="Top Platforms" items={statsData.byPlatform} totalGames={statsData.total} />
+              <DonutChart title="Top Genres" items={statsData.byGenre} totalGames={statsData.total} />
             </div>
 
             <YearsPlayedChart items={statsData.byYearPlayed} />
