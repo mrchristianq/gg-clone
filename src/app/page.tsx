@@ -2612,7 +2612,7 @@ export default function HomePage() {
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      meta={g.dateCompleted ? formatDate(g.dateCompleted) : undefined}
+                      meta={g.dateCompleted ? formatDateShort(g.dateCompleted) : undefined}
                       size={140}
                       onClick={() => setSelectedGame(g)}
                     />
@@ -2631,7 +2631,7 @@ export default function HomePage() {
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      meta={g.releaseDate ? formatDate(g.releaseDate) : undefined}
+                      meta={g.releaseDate ? formatDateShort(g.releaseDate) : undefined}
                       size={140}
                       onClick={() => setSelectedGame(g)}
                     />
@@ -2650,7 +2650,7 @@ export default function HomePage() {
                       key={`${g.title}-${i}`}
                       title={g.title}
                       coverUrl={g.coverUrl}
-                      meta={g.releaseDate ? formatDate(g.releaseDate) : undefined}
+                      meta={g.releaseDate ? formatDateShort(g.releaseDate) : undefined}
                       size={140}
                       onClick={() => setSelectedGame(g)}
                     />
