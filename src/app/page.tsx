@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 2.2.7
+   Version: 2.2.8
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -26,8 +26,10 @@
        - Top Rated Games: year dropdown inside same module; defaults current year
        - Top Platforms & Top Genres: interactive donut charts
        - Year Played: vertical bar chart, last 5 years, grid + labels
-   - FIX (2.2.7):
-       - Removed invalid img prop "consider" that caused TS/JSX error
+   - FIX (2.2.8):
+       - Donut chart center total now shows TOTAL GAMES IN VIEW (not inflated by multi-tags)
+       - Year Played chart now renders bars (restored positioned container)
+       - My Average Rating card now uses avgMyThisYear (not selectedGame)
 ===================================================================================== */
 
 "use client";
@@ -81,7 +83,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "2.2.7";
+const VERSION = "2.2.8";
 
 const COLORS = {
   bg: "#0b0b0f",
@@ -862,7 +864,16 @@ function SortableTile({
               }}
             />
           ) : (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: COLORS.muted,
+                fontSize: 12,
+              }}
+            >
               No cover
             </div>
           )}
@@ -1051,17 +1062,20 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
   const start = polarToCartesian(cx, cy, r, endAngle);
   const end = polarToCartesian(cx, cy, r, startAngle);
   const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
+  return `M ${start.x} ${
+     start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
 }
 
 function DonutChart({
   title,
   items,
   centerLabel,
+  totalGames,
 }: {
   title: string;
   items: Array<{ label: string; count: number }>;
   centerLabel: string;
+  totalGames: number;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -1094,15 +1108,51 @@ function DonutChart({
   const active = hoverIdx != null ? slices[hoverIdx] : null;
 
   return (
-    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+    <div
+      style={{
+        background: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 16,
+        padding: 14,
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
         {title}
       </div>
 
-      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "240px 1fr", gap: 14, alignItems: "center" }}>
+      <div
+        style={{
+          marginTop: 12,
+          display: "grid",
+          gridTemplateColumns: "240px 1fr",
+          gap: 14,
+          alignItems: "center",
+        }}
+      >
         <div style={{ position: "relative", width: 240 }}>
-          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block", margin: "0 auto" }}>
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
+          <svg
+            width={size}
+            height={size}
+            viewBox={`0 0 ${size} ${size}`}
+            style={{ display: "block", margin: "0 auto" }}
+          >
+            <circle
+              cx={cx}
+              cy={cy}
+              r={r}
+              fill="none"
+              stroke="rgba(255,255,255,0.06)"
+              strokeWidth={stroke}
+            />
 
             {slices.map((s) => {
               if (s.count <= 0) return null;
@@ -1121,12 +1171,22 @@ function DonutChart({
                   opacity={isActive ? 1 : 0.9}
                   onMouseEnter={() => setHoverIdx(s.idx)}
                   onMouseLeave={() => setHoverIdx(null)}
-                  style={{ cursor: "pointer", filter: isActive ? "drop-shadow(0 10px 18px rgba(0,0,0,0.55))" : "none" }}
+                  style={{
+                    cursor: "pointer",
+                    filter: isActive
+                      ? "drop-shadow(0 10px 18px rgba(0,0,0,0.55))"
+                      : "none",
+                  }}
                 />
               );
             })}
 
-            <circle cx={cx} cy={cy} r={r - stroke / 2 - 10} fill={COLORS.panel} />
+            <circle
+              cx={cx}
+              cy={cy}
+              r={r - stroke / 2 - 10}
+              fill={COLORS.panel}
+            />
           </svg>
 
           <div
@@ -1140,11 +1200,24 @@ function DonutChart({
             }}
           >
             <div style={{ textAlign: "center" }}>
-              <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>{centerLabel}</div>
-              <div style={{ marginTop: 6, color: COLORS.text, fontSize: 28, fontWeight: 950 }}>
-                {active ? active.count : filteredGames.length}
+              <div
+                style={{ color: COLORS.muted, fontSize: 12, fontWeight: 800 }}
+              >
+                {centerLabel}
               </div>
-              <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>
+              <div
+                style={{
+                  marginTop: 6,
+                  color: COLORS.text,
+                  fontSize: 28,
+                  fontWeight: 950,
+                }}
+              >
+                {active ? active.count : totalGames}
+              </div>
+              <div
+                style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}
+              >
                 {active ? active.label : "Total Games"}
               </div>
             </div>
@@ -1169,12 +1242,22 @@ function DonutChart({
                     padding: "6px 8px",
                     borderRadius: 12,
                     border: `1px solid ${COLORS.border}`,
-                    background: isActive ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)",
+                    background: isActive
+                      ? "rgba(255,255,255,0.04)"
+                      : "rgba(255,255,255,0.02)",
                     cursor: "pointer",
                     minWidth: 0,
                   }}
                 >
-                  <div style={{ width: 10, height: 10, borderRadius: 999, background: color, flex: "0 0 auto" }} />
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 999,
+                      background: color,
+                      flex: "0 0 auto",
+                    }}
+                  />
                   <div
                     style={{
                       color: COLORS.text,
@@ -1190,7 +1273,16 @@ function DonutChart({
                   >
                     {it.label}
                   </div>
-                  <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 900, flex: "0 0 auto" }}>{it.count}</div>
+                  <div
+                    style={{
+                      color: COLORS.muted,
+                      fontSize: 12,
+                      fontWeight: 900,
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    {it.count}
+                  </div>
                 </div>
               );
             })
@@ -1200,7 +1292,11 @@ function DonutChart({
 
           {top ? (
             <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12, fontWeight: 650 }}>
-              Most common: <span style={{ color: COLORS.text, fontWeight: 900 }}>{top.label}</span> ({top.count})
+              Most common:{" "}
+              <span style={{ color: COLORS.text, fontWeight: 900 }}>
+                {top.label}
+              </span>{" "}
+              ({top.count})
             </div>
           ) : null}
         </div>
@@ -1210,11 +1306,7 @@ function DonutChart({
 }
 
 /** ===== Years Played vertical bar chart (last 5 years) ===== */
-function YearsPlayedChart({
-  items,
-}: {
-  items: Array<{ label: string; count: number }>;
-}) {
+function YearsPlayedChart({ items }: { items: Array<{ label: string; count: number }> }) {
   const numeric = items
     .map((x) => ({ ...x, y: Number(x.label) }))
     .filter((x) => Number.isFinite(x.y))
@@ -1228,48 +1320,123 @@ function YearsPlayedChart({
   for (let v = 0; v <= max; v += gridStep) gridLines.push(v);
 
   return (
-    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+    <div
+      style={{
+        background: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 16,
+        padding: 14,
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
         Year Played (last 5)
       </div>
 
-      {gridLines.map((v) => {
-  const pct = (v / max) * 100;
-  return (
-    <div key={v} style={{ position: "absolute", left: 0, right: 0, bottom: `${pct}%`, height: 1, background: "rgba(255,255,255,0.06)" }}>
-      <div style={{ position: "absolute", left: 10, bottom: 4, color: "rgba(255,255,255,0.28)", fontSize: 10, fontWeight: 800 }}>
-        {v}
+      <div
+        style={{
+          marginTop: 12,
+          position: "relative",
+          height: 220,
+          borderRadius: 14,
+          background: "rgba(255,255,255,0.02)",
+          border: `1px solid ${COLORS.border}`,
+          overflow: "hidden",
+        }}
+      >
+        {gridLines.map((v) => {
+          const pct = (v / max) * 100;
+          return (
+            <div
+              key={v}
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: `${pct}%`,
+                height: 1,
+                background: "rgba(255,255,255,0.06)",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  left: 10,
+                  bottom: 4,
+                  color: "rgba(255,255,255,0.28)",
+                  fontSize: 10,
+                  fontWeight: 800,
+                }}
+              >
+                {v}
+              </div>
+            </div>
+          );
+        })}
+
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "grid",
+            gridTemplateColumns: `repeat(${Math.max(1, last5.length)}, 1fr)`,
+            gap: 14,
+            padding: "14px 16px",
+            alignItems: "end",
+          }}
+        >
+          {last5.length ? (
+            last5.map((x) => {
+              const hPct = (x.count / max) * 100;
+              return (
+                <div
+                  key={x.label}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 900 }}>
+                    {x.count}
+                  </div>
+
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: 72,
+                      height: `${Math.max(6, hPct)}%`,
+                      borderRadius: 12,
+                      background: COLORS.statNumber,
+                      opacity: 0.8,
+                      boxShadow: "0 18px 40px rgba(0,0,0,.35)",
+                    }}
+                    title={`${x.label}: ${x.count}`}
+                  />
+
+                  <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 900 }}>
+                    {x.label}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ color: COLORS.muted, fontSize: 12 }}>No year data.</div>
+          )}
+        </div>
       </div>
     </div>
   );
-})}
-<div style={{ position: "absolute", inset: 0, display: "grid", gridTemplateColumns: `repeat(${Math.max(1, last5.length)}, 1fr)`, gap: 14, padding: "14px 16px", alignItems: "end" }}>
-  {last5.length ? (
-    last5.map((x) => {
-      const hPct = (x.count / max) * 100;
-      return (
-        <div key={x.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-          <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 900 }}>{x.count}</div>
-          <div
-            style={{
-              width: "100%",
-              maxWidth: 72,
-              height: `${Math.max(6, hPct)}%`,
-              borderRadius: 12,
-              background: COLORS.statNumber,
-              opacity: 0.8,
-              boxShadow: "0 18px 40px rgba(0,0,0,.35)",
-            }}
-            title={`${x.label}: ${x.count}`}
-          />
-          <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 900 }}>{x.label}</div>
-        </div>
-      );
-    })
-  ) : (
-    <div style={{ color: COLORS.muted, fontSize: 12 }}>No year data.</div>
-  )}
-</div>
+}
 
 /** ===== Newest release card with cover (<= today) ===== */
 function NewestReleaseCard({
@@ -1280,8 +1447,24 @@ function NewestReleaseCard({
   game: { title: string; coverUrl: string; releaseDate: string } | null;
 }) {
   return (
-    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 14, minWidth: 0 }}>
-      <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+    <div
+      style={{
+        background: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 16,
+        padding: 14,
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          color: COLORS.muted,
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
         {title}
       </div>
 
@@ -1304,30 +1487,59 @@ function NewestReleaseCard({
                 src={game.coverUrl}
                 alt={game.title}
                 loading="lazy"
-                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                }}
               />
             ) : (
-              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 11 }}>
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: COLORS.muted,
+                  fontSize: 11,
+                }}
+              >
                 —
               </div>
             )}
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <div style={{ color: COLORS.text, fontSize: 14, fontWeight: 950, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <div
+              style={{
+                color: COLORS.text,
+                fontSize: 14,
+                fontWeight: 950,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
               {game.title}
             </div>
-            <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>{game.releaseDate || "—"}</div>
+            <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 12, fontWeight: 800 }}>
+              {game.releaseDate || "—"}
+            </div>
           </div>
         </div>
       ) : (
-        <div style={{ marginTop: 12, color: COLORS.muted, fontSize: 12 }}>No releases in view.</div>
+        <div style={{ marginTop: 12, color: COLORS.muted, fontSize: 12 }}>
+          No releases in view.
+        </div>
       )}
     </div>
   );
 }
 
-// --- everything below this point is unchanged from your paste (except VERSION bump) ---
+// ---- paste the next chunk you have after this line (it should be: `export default function HomePage() {`)
+// and I’ll continue from there cleanly.
 export default function HomePage() {
   const csvUrl = process.env.NEXT_PUBLIC_SHEET_CSV_URL;
 
