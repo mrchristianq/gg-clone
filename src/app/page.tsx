@@ -1299,17 +1299,19 @@ function DonutChart({
   title,
   items,
   totalGames,
+  compact = false,
 }: {
   title: string;
   items: Array<{ label: string; count: number }>;
   totalGames: number;
+  compact?: boolean;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const total = items.reduce((s, x) => s + x.count, 0);
   const top = items[0];
 
-  const size = 320;
+  const size = compact ? 240 : 320;
   const cx = size / 2;
   const cy = size / 2;
   const r = 118;
@@ -1360,12 +1362,19 @@ function DonutChart({
         style={{
           marginTop: 12,
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: compact ? "1fr" : "1fr 1fr",
           gap: 14,
           alignItems: "center",
         }}
       >
-        <div style={{ position: "relative", width: "100%", maxWidth: 340, justifySelf: "center" }}>
+        <div
+          style={{
+            position: "relative",
+            width: "100%",
+            maxWidth: compact ? 260 : 340,
+            justifySelf: "center",
+          }}
+        >
           <svg
             width={size}
             height={size}
@@ -2736,8 +2745,8 @@ export default function HomePage() {
             />
 
             <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12 }}>
-              <DonutChart title="Top Platforms" items={statsData.byPlatform} totalGames={statsData.total} />
-              <DonutChart title="Top Genres" items={statsData.byGenre} totalGames={statsData.total} />
+              <DonutChart title="Top Platforms" items={statsData.byPlatform} totalGames={statsData.total} compact={isMobile} />
+              <DonutChart title="Top Genres" items={statsData.byGenre} totalGames={statsData.total} compact={isMobile} />
             </div>
 
             <YearsPlayedChart items={statsData.byYearPlayed} />
