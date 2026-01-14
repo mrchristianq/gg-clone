@@ -699,9 +699,9 @@ function TabButton({
         background: "transparent",
         color: COLORS.text,
         cursor: "pointer",
-        fontSize: compact ? 11 : 16,
+        fontSize: compact ? 10 : 16,
         fontWeight: 900,
-        padding: compact ? "3px 4px" : "8px 6px",
+        padding: compact ? "2px 3px" : "8px 6px",
         position: "relative",
         opacity: active ? 1 : 0.72,
         whiteSpace: "nowrap",
@@ -2479,7 +2479,7 @@ export default function HomePage() {
             <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 6 }}>{tileSize}px</div>
             <input
               type="range"
-              min={75}
+              min={80}
               max={260}
               value={tileSize}
               onChange={(e) => setTileSize(Number(e.target.value))}
@@ -2748,7 +2748,7 @@ export default function HomePage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 75 : tileSize}px, 1fr))`,
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 80 : tileSize}px, 1fr))`,
                   gap: isMobile ? 10 : 12,
                 }}
               >
