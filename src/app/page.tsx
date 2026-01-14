@@ -1311,11 +1311,11 @@ function DonutChart({
   const total = items.reduce((s, x) => s + x.count, 0);
   const top = items[0];
 
-  const size = compact ? 240 : 320;
+  const size = compact ? 220 : 320;
   const cx = size / 2;
   const cy = size / 2;
-  const r = 118;
-  const stroke = 26;
+  const r = compact ? 90 : 118;
+  const stroke = compact ? 22 : 26;
 
   let currentAngle = 0;
   const slices = items.map((it, idx) => {
