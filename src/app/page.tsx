@@ -1535,7 +1535,13 @@ function DonutChart({
 }
 
 /** ===== Years Played vertical bar chart (last 5 years) ===== */
-function YearsPlayedChart({ items }: { items: Array<{ label: string; count: number }> }) {
+function YearsPlayedChart({
+  items,
+  compact = false,
+}: {
+  items: Array<{ label: string; count: number }>;
+  compact?: boolean;
+}) {
   const numeric = items
     .map((x) => ({ ...x, y: Number(x.label) }))
     .filter((x) => Number.isFinite(x.y))
@@ -1574,7 +1580,7 @@ function YearsPlayedChart({ items }: { items: Array<{ label: string; count: numb
         style={{
           marginTop: 12,
           position: "relative",
-          height: 220,
+          height: compact ? 180 : 220,
           borderRadius: 14,
           background: "rgba(255,255,255,0.02)",
           border: `1px solid ${COLORS.border}`,
@@ -1593,16 +1599,21 @@ function YearsPlayedChart({ items }: { items: Array<{ label: string; count: numb
                 bottom: `${pct}%`,
                 height: 1,
                 background: "rgba(255,255,255,0.06)",
+                zIndex: 1,
               }}
             >
               <div
                 style={{
                   position: "absolute",
-                  left: 10,
+                  left: compact ? 6 : 10,
                   bottom: 4,
                   color: "rgba(255,255,255,0.28)",
-                  fontSize: 10,
+                  fontSize: compact ? 9 : 10,
                   fontWeight: 800,
+                  padding: "0 4px",
+                  background: COLORS.panel,
+                  borderRadius: 6,
+                  zIndex: 2,
                 }}
               >
                 {v}
@@ -1617,9 +1628,10 @@ function YearsPlayedChart({ items }: { items: Array<{ label: string; count: numb
             inset: 0,
             display: "grid",
             gridTemplateColumns: `repeat(${Math.max(1, last5.length)}, 1fr)`,
-            gap: 14,
-            padding: "14px 16px",
+            gap: compact ? 10 : 14,
+            padding: compact ? "12px 12px 12px 30px" : "14px 16px",
             alignItems: "end",
+            zIndex: 0,
           }}
         >
           {last5.length ? (
@@ -1644,7 +1656,7 @@ function YearsPlayedChart({ items }: { items: Array<{ label: string; count: numb
                   <div
                     style={{
                       width: "100%",
-                      maxWidth: 72,
+                      maxWidth: compact ? 52 : 72,
                       height: `${Math.max(6, hPct)}%`,
                       borderRadius: 6,
                       background: COLORS.statNumber,
@@ -1654,7 +1666,7 @@ function YearsPlayedChart({ items }: { items: Array<{ label: string; count: numb
                     title={`${x.label}: ${x.count}`}
                   />
 
-                  <div style={{ color: COLORS.text, fontSize: 12, fontWeight: 900 }}>
+                  <div style={{ color: COLORS.text, fontSize: compact ? 11 : 12, fontWeight: 900 }}>
                     {x.label}
                   </div>
                 </div>
@@ -2749,7 +2761,7 @@ export default function HomePage() {
               <DonutChart title="Top Genres" items={statsData.byGenre} totalGames={statsData.total} compact={isMobile} />
             </div>
 
-            <YearsPlayedChart items={statsData.byYearPlayed} />
+            <YearsPlayedChart items={statsData.byYearPlayed} compact={isMobile} />
           </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
