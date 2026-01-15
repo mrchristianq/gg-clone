@@ -2278,12 +2278,6 @@ export default function HomePage() {
   }, [csvUrl, refreshNonce]);
 
   useEffect(() => {
-    // Random Stat of the Day is based on current filtered view
-    setRandomStat(getRandomStatOfDay(filtered));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered]);
-
-  useEffect(() => {
     if (activeTab === "queued") {
       setSortBy("queuedOrder");
       setSortDir("asc");
@@ -2384,6 +2378,12 @@ export default function HomePage() {
     sortBy,
     sortDir,
   ]);
+
+  useEffect(() => {
+    // Random Stat of the Day is based on current filtered view
+    setRandomStat(getRandomStatOfDay(filtered));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered]);
 
   const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
   const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
