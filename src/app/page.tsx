@@ -453,6 +453,383 @@ function StarsAndNumber({
   );
 }
 
+/** ===== Random Stat of the Day helpers ===== */
+
+type RandomStatId =
+  | "hiddenGem"
+  | "longestBacklog"
+  | "boughtNeverPlayed"
+  | "comfortZoneDev"
+  | "peakGamingMonth"
+  | "highStandards"
+  | "fastestCompletion"
+  | "backlogAnxiety"
+  | "ignoredGenre"
+  | "surpriseFavorite";
+
+type RandomStatResult = {
+  id: RandomStatId;
+  icon: string;
+  title: string;
+  primary: string; // big number / headline
+  secondary?: string; // small explanation
+  coverUrl?: string;
+  gameTitle?: string;
+};
+
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function normalizeIgdbTo10(raw: number) {
+  // Some sheets store IGDB on 0–100; normalize to 0–10.
+  if (!Number.isFinite(raw)) return NaN;
+  if (raw > 10) return raw / 10;
+  return raw;
+}
+
+function monthKeyFromDateNum(t: number) {
+  // returns YYYY-MM
+  const d = new Date(t);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+function formatMonthLabel(ym: string) {
+  // ym = YYYY-MM
+  const [y, m] = ym.split("-");
+  const d = new Date(Number(y), Math.max(0, Number(m) - 1), 1);
+  try {
+    return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  } catch {
+    return ym;
+  }
+}
+
+function seedFromDateKey(dateKey: string) {
+  // Deterministic integer seed from YYYY-MM-DD
+  let h = 2166136261;
+  for (let i = 0; i < dateKey.length; i++) {
+    h ^= dateKey.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed: number) {
+  // Simple deterministic RNG
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function todayKeyLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function pickDeterministic<T>(arr: T[], dateKey: string) {
+  if (!arr.length) return null;
+  const rng = mulberry32(seedFromDateKey(dateKey));
+  const idx = Math.floor(rng() * arr.length);
+  return arr[clamp(idx, 0, arr.length - 1)];
+}
+
+function safeDaysBetween(a: string, b: string) {
+  const ta = toDateNum(a);
+  const tb = toDateNum(b);
+  if (!ta || !tb) return NaN;
+  const diff = Math.round((tb - ta) / (1000 * 60 * 60 * 24));
+  return Number.isFinite(diff) ? diff : NaN;
+}
+
+function fmtPct(n: number) {
+  if (!Number.isFinite(n)) return "—";
+  return `${Math.round(n * 100)}%`;
+}
+
+function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] {
+  const pool: RandomStatResult[] = [];
+
+  // 1) Hidden Gem Finder
+  {
+    const scored = base
+      .map((g) => {
+        const my10 = parseMyRating10(g.myRating);
+        const igdbRaw = Number(norm(g.igdbRating));
+        const igdb10 = normalizeIgdbTo10(igdbRaw);
+        if (my10 == null) return null;
+        if (!Number.isFinite(igdb10) || igdb10 <= 0) return null;
+        if (my10 <= 7) return null;
+        const delta = my10 - igdb10;
+        return { g, my10, igdb10, delta };
+      })
+      .filter(Boolean) as Array<{ g: Game; my10: number; igdb10: number; delta: number }>;
+
+    scored.sort((a, b) => b.delta - a.delta);
+    const top = scored[0];
+    if (top && top.delta >= 1.0) {
+      pool.push({
+        id: "hiddenGem",
+        icon: "💎",
+        title: "Hidden Gem Finder",
+        primary: `+${top.delta.toFixed(1)} pts`,
+        secondary: `${top.g.title} (you ${formatRatingLabel(top.my10)} vs IGDB ${top.igdb10.toFixed(1)})`,
+        coverUrl: top.g.coverUrl,
+        gameTitle: top.g.title,
+      });
+    }
+  }
+
+  // 2) Longest Time in Backlog
+  {
+    const candidates = base
+      .map((g) => {
+        if (!toBool(g.completed)) return null;
+        const days = safeDaysBetween(g.dateAdded, g.dateCompleted);
+        if (!Number.isFinite(days) || days < 0) return null;
+        return { g, days };
+      })
+      .filter(Boolean) as Array<{ g: Game; days: number }>;
+
+    candidates.sort((a, b) => b.days - a.days);
+    const top = candidates[0];
+    if (top) {
+      pool.push({
+        id: "longestBacklog",
+        icon: "⏳",
+        title: "Longest Time in Backlog",
+        primary: `${top.days} days`,
+        secondary: top.g.title,
+        coverUrl: top.g.coverUrl,
+        gameTitle: top.g.title,
+      });
+    }
+  }
+
+  // 3) Bought But Never Played (best-effort proxy)
+  {
+    const count = base.filter((g) => !toBool(g.completed) && norm(g.status) !== "Now Playing").length;
+    if (count > 0) {
+      pool.push({
+        id: "boughtNeverPlayed",
+        icon: "😬",
+        title: "Bought… Never Played",
+        primary: String(count),
+        secondary: "Not completed and not currently Now Playing",
+      });
+    }
+  }
+
+  // 4) Comfort Zone Detected (Developer)
+  {
+    const map = countByKey(base, (g) => g.developer);
+    const entries = Array.from(map.entries())
+      .map(([label, count]) => ({ label, count }))
+      .filter((x) => x.label && x.count > 0)
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+    const top = entries[0];
+    if (top && top.count >= 2) {
+      pool.push({
+        id: "comfortZoneDev",
+        icon: "🔁",
+        title: "Comfort Zone Detected",
+        primary: `${top.count} games`,
+        secondary: `Top developer: ${top.label}`,
+      });
+    }
+  }
+
+  // 5) Peak Gaming Month
+  {
+    const completed = base
+      .filter((g) => toBool(g.completed))
+      .map((g) => ({ g, t: toDateNum(g.dateCompleted) }))
+      .filter((x) => x.t);
+
+    const byMonth = new Map<string, number>();
+    completed.forEach((x) => {
+      const k = monthKeyFromDateNum(x.t);
+      byMonth.set(k, (byMonth.get(k) ?? 0) + 1);
+    });
+
+    const top = Array.from(byMonth.entries())
+      .map(([k, count]) => ({ k, count }))
+      .sort((a, b) => b.count - a.count || b.k.localeCompare(a.k))[0];
+
+    if (top) {
+      pool.push({
+        id: "peakGamingMonth",
+        icon: "📅",
+        title: "Peak Gaming Month",
+        primary: String(top.count),
+        secondary: formatMonthLabel(top.k),
+      });
+    }
+  }
+
+  // 6) High Standards
+  {
+    const rated = base
+      .map((g) => parseMyRating10(g.myRating))
+      .filter((n): n is number => n != null);
+
+    if (rated.length) {
+      const high = rated.filter((n) => n >= 8).length;
+      pool.push({
+        id: "highStandards",
+        icon: "🎯",
+        title: "High Standards",
+        primary: fmtPct(high / rated.length),
+        secondary: `${high} of ${rated.length} ratings are 8+`,
+      });
+    }
+  }
+
+  // 7) Fastest Completion
+  {
+    const candidates = base
+      .map((g) => {
+        if (!toBool(g.completed)) return null;
+        const days = safeDaysBetween(g.dateAdded, g.dateCompleted);
+        if (!Number.isFinite(days) || days < 0) return null;
+        return { g, days };
+      })
+      .filter(Boolean) as Array<{ g: Game; days: number }>;
+
+    candidates.sort((a, b) => a.days - b.days);
+    const top = candidates[0];
+    if (top) {
+      pool.push({
+        id: "fastestCompletion",
+        icon: "🥇",
+        title: "Fastest Completion",
+        primary: `${top.days} days`,
+        secondary: top.g.title,
+        coverUrl: top.g.coverUrl,
+        gameTitle: top.g.title,
+      });
+    }
+  }
+
+  // 8) Backlog Anxiety Index
+  {
+    const queued = base.filter((g) => norm(g.status) === "Queued").length;
+    const wish = base.filter((g) => norm(g.ownership) === "Wishlist").length;
+    const completed = base.filter((g) => toBool(g.completed)).length;
+
+    if (completed > 0 && (queued + wish) > 0) {
+      const ratio = (queued + wish) / completed;
+      pool.push({
+        id: "backlogAnxiety",
+        icon: "😅",
+        title: "Backlog Anxiety Index",
+        primary: ratio.toFixed(2),
+        secondary: `${queued + wish} backlog vs ${completed} completed`,
+      });
+    }
+  }
+
+  // 9) Genre You Ignore
+  {
+    const map = countByTagList(base, (g) => g.genres);
+    const entries = Array.from(map.entries())
+      .map(([label, count]) => ({ label, count }))
+      .filter((x) => x.label && x.count > 0)
+      .sort((a, b) => a.count - b.count || a.label.localeCompare(b.label));
+
+    const bottom = entries[0];
+    if (bottom) {
+      pool.push({
+        id: "ignoredGenre",
+        icon: "🙈",
+        title: "Most Ignored Genre",
+        primary: `${bottom.count}`,
+        secondary: bottom.label,
+      });
+    }
+  }
+
+  // 10) Surprise Favorite
+  {
+    const candidates = base
+      .map((g) => {
+        const my10 = parseMyRating10(g.myRating);
+        const igdbRaw = Number(norm(g.igdbRating));
+        const igdb10 = normalizeIgdbTo10(igdbRaw);
+        if (my10 == null) return null;
+        if (!Number.isFinite(igdb10) || igdb10 <= 0) return null;
+        if (my10 < 8) return null;
+        if (igdb10 > 6) return null;
+        const tComp = toDateNum(g.dateCompleted);
+        return { g, my10, igdb10, tComp };
+      })
+      .filter(Boolean) as Array<{ g: Game; my10: number; igdb10: number; tComp: number }>;
+
+    // Prefer recently completed, else fallback by biggest delta
+    candidates.sort((a, b) => {
+      const aHas = a.tComp ? 1 : 0;
+      const bHas = b.tComp ? 1 : 0;
+      if (aHas !== bHas) return bHas - aHas;
+      if (a.tComp && b.tComp && a.tComp !== b.tComp) return b.tComp - a.tComp;
+      return (b.my10 - b.igdb10) - (a.my10 - a.igdb10);
+    });
+
+    const top = candidates[0];
+    if (top) {
+      pool.push({
+        id: "surpriseFavorite",
+        icon: "🎁",
+        title: "Surprise Favorite",
+        primary: formatRatingLabel(top.my10),
+        secondary: `${top.g.title} (IGDB ${top.igdb10.toFixed(1)})`,
+        coverUrl: top.g.coverUrl,
+        gameTitle: top.g.title,
+      });
+    }
+  }
+
+  // Keep results deterministic for the day by picking deterministically from pool (after filtering invalid)
+  // NOTE: callers can still store result in localStorage for stability across code changes.
+  return pool;
+}
+
+function getRandomStatOfDay(base: Game[]): RandomStatResult | null {
+  const dateKey = todayKeyLocal();
+  const storageKey = `cgl-random-stat-v1:${dateKey}`;
+
+  try {
+    if (typeof window !== "undefined") {
+      const cached = window.localStorage.getItem(storageKey);
+      if (cached) return JSON.parse(cached) as RandomStatResult;
+    }
+  } catch {
+    // ignore
+  }
+
+  const pool = buildRandomStatPool(base, dateKey);
+  const picked = pool.length ? pickDeterministic(pool, dateKey) : null;
+
+  try {
+    if (picked && typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey, JSON.stringify(picked));
+    }
+  } catch {
+    // ignore
+  }
+
+  return picked;
+}
+
 /** ===== Small UI components ===== */
 function CountBadge({ n }: { n: number }) {
   return (
@@ -1841,6 +2218,7 @@ export default function HomePage() {
 
   const currentYear = String(new Date().getFullYear());
   const [topRatedYear, setTopRatedYear] = useState<string>(currentYear);
+  const [randomStat, setRandomStat] = useState<RandomStatResult | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -1898,6 +2276,12 @@ export default function HomePage() {
     fetchCsvNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [csvUrl, refreshNonce]);
+
+  useEffect(() => {
+    // Random Stat of the Day is based on current filtered view
+    setRandomStat(getRandomStatOfDay(filtered));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered]);
 
   useEffect(() => {
     if (activeTab === "queued") {
