@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 3.0.0
+   Version: 3.5.0
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -35,6 +35,13 @@
        - Upcoming shows countdown dates; other Home rows hide dates
        - Mobile layout updates: smaller tiles, 4-per-row Home/grid, single-row tabs
        - Home rows capped to 5 items on desktop, 4 on mobile
+   - NEW (3.5.0):
+       - App background updated to teal gradient to match reference
+       - Sidebar updated with teal gradient and darker top edge
+       - Top-left menu module uses a thicker subtle black border
+       - Top stats numbers increased and centered
+       - Random Stat of the Day is daily, full-width, and can show cover or chart
+       - Fixed Random Stat effect ordering to avoid build error
 ===================================================================================== */
 
 "use client";
@@ -88,7 +95,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "3.0.0";
+const VERSION = "3.5.0";
 
 const COLORS = {
   bgSolid: "#0b1a1d",
@@ -475,6 +482,11 @@ type RandomStatResult = {
   secondary?: string; // small explanation
   coverUrl?: string;
   gameTitle?: string;
+  chart?: {
+    type: "bar";
+    items: Array<{ label: string; value: number }>;
+    caption?: string;
+  };
 };
 
 function clamp(n: number, lo: number, hi: number) {
@@ -662,17 +674,26 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
       byMonth.set(k, (byMonth.get(k) ?? 0) + 1);
     });
 
-    const top = Array.from(byMonth.entries())
+    const monthEntries = Array.from(byMonth.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    const top = monthEntries
       .map(([k, count]) => ({ k, count }))
       .sort((a, b) => b.count - a.count || b.k.localeCompare(a.k))[0];
 
     if (top) {
+      const lastSix = monthEntries.slice(-6).map(([k, count]) => ({ label: k, value: count }));
       pool.push({
         id: "peakGamingMonth",
         icon: "📅",
         title: "Peak Gaming Month",
         primary: String(top.count),
         secondary: formatMonthLabel(top.k),
+        chart: lastSix.length
+          ? {
+              type: "bar",
+              items: lastSix,
+              caption: "Completions (last 6 months)",
+            }
+          : undefined,
       });
     }
   }
@@ -803,8 +824,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
   return pool;
 }
 
-function getRandomStatOfDay(base: Game[]): RandomStatResult | null {
-  const dateKey = todayKeyLocal();
+function getRandomStatOfDay(base: Game[], dateKey: string): RandomStatResult | null {
   const storageKey = `cgl-random-stat-v1:${dateKey}`;
 
   try {
@@ -830,6 +850,16 @@ function getRandomStatOfDay(base: Game[]): RandomStatResult | null {
   return picked;
 }
 
+function formatMonthShort(ym: string) {
+  const [y, m] = ym.split("-");
+  const d = new Date(Number(y), Math.max(0, Number(m) - 1), 1);
+  try {
+    return d.toLocaleDateString(undefined, { month: "short" });
+  } catch {
+    return ym;
+  }
+}
+
 /** ===== Small UI components ===== */
 function CountBadge({ n }: { n: number }) {
   return (
@@ -851,6 +881,142 @@ function CountBadge({ n }: { n: number }) {
     >
       {n}
     </span>
+  );
+}
+
+function RandomStatCard({ stat }: { stat: RandomStatResult | null }) {
+  if (!stat) {
+    return (
+      <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 16 }}>
+        <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Random Stat of the Day
+        </div>
+        <div style={{ marginTop: 10, color: COLORS.muted, fontSize: 12 }}>No stats available yet.</div>
+      </div>
+    );
+  }
+
+  const hasCover = Boolean(stat.coverUrl);
+  const hasChart = Boolean(stat.chart?.items?.length);
+
+  return (
+    <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ color: COLORS.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Random Stat of the Day
+        </div>
+        <div
+          style={{
+            padding: "6px 10px",
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${COLORS.border}`,
+            color: COLORS.muted,
+            fontSize: 11,
+            fontWeight: 800,
+          }}
+        >
+          {stat.title}
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          display: "grid",
+          gridTemplateColumns: hasCover ? "1.3fr 180px" : hasChart ? "1.2fr 1fr" : "1fr",
+          gap: 16,
+          alignItems: "center",
+        }}
+      >
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(255,255,255,0.06)",
+                border: `1px solid ${COLORS.border}`,
+                fontSize: 18,
+              }}
+              aria-hidden
+            >
+              {stat.icon}
+            </div>
+            <div style={{ color: COLORS.text, fontSize: 16, fontWeight: 900 }}>{stat.title}</div>
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: 42, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
+            {stat.primary}
+          </div>
+          {stat.secondary ? (
+            <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 13, fontWeight: 700 }}>{stat.secondary}</div>
+          ) : null}
+        </div>
+
+        {hasCover ? (
+          <div
+            style={{
+              borderRadius: 14,
+              overflow: "hidden",
+              border: `1px solid ${COLORS.border}`,
+              background: COLORS.card,
+              aspectRatio: "2 / 3",
+              boxShadow: "0 18px 40px rgba(0,0,0,.45)",
+            }}
+            title={stat.gameTitle || stat.title}
+          >
+            <img
+              src={stat.coverUrl}
+              alt={stat.gameTitle || "Game cover"}
+              loading="lazy"
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+          </div>
+        ) : hasChart ? (
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 14,
+              border: `1px solid ${COLORS.border}`,
+              background: "rgba(255,255,255,0.02)",
+              minHeight: 120,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 96 }}>
+              {stat.chart?.items.map((it) => {
+                const max = Math.max(...(stat.chart?.items.map((x) => x.value) ?? [1]));
+                const h = max ? Math.max(8, Math.round((it.value / max) * 80)) : 8;
+                return (
+                  <div key={it.label} style={{ flex: "1 1 0", textAlign: "center" }}>
+                    <div
+                      style={{
+                        height: h,
+                        borderRadius: 8,
+                        background: COLORS.statNumber,
+                        opacity: 0.85,
+                        boxShadow: "0 10px 20px rgba(0,0,0,0.35)",
+                      }}
+                      title={`${it.label}: ${it.value}`}
+                    />
+                    <div style={{ marginTop: 6, color: COLORS.muted, fontSize: 10, fontWeight: 800 }}>
+                      {formatMonthShort(it.label)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {stat.chart?.caption ? (
+              <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 11, fontWeight: 700 }}>{stat.chart.caption}</div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -2215,6 +2381,7 @@ export default function HomePage() {
   const [syncMsg, setSyncMsg] = useState<string>("");
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [todayKey, setTodayKey] = useState(() => todayKeyLocal());
 
   const currentYear = String(new Date().getFullYear());
   const [topRatedYear, setTopRatedYear] = useState<string>(currentYear);
@@ -2276,6 +2443,14 @@ export default function HomePage() {
     fetchCsvNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [csvUrl, refreshNonce]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const next = todayKeyLocal();
+      setTodayKey((prev) => (prev === next ? prev : next));
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (activeTab === "queued") {
@@ -2380,10 +2555,10 @@ export default function HomePage() {
   ]);
 
   useEffect(() => {
-    // Random Stat of the Day is based on current filtered view
-    setRandomStat(getRandomStatOfDay(filtered));
+    // Random Stat of the Day is based on all games, changes daily.
+    setRandomStat(getRandomStatOfDay(games, todayKey));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered]);
+  }, [games, todayKey]);
 
   const platformCounts = useMemo(() => countByTagList(filtered, (g) => g.platform), [filtered]);
   const statusCounts = useMemo(() => countByKey(filtered, (g) => g.status), [filtered]);
@@ -3151,6 +3326,8 @@ export default function HomePage() {
                 overlayRating: parseMyRating10(g.myRating),
               }))}
             />
+
+            <RandomStatCard stat={randomStat} />
 
             <div className="statsGrid2" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12 }}>
               <DonutChart title="Top Platforms" items={statsData.byPlatform} totalGames={statsData.total} compact={isMobile} />
