@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 3.5.0
+   Version: 3.6.0
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -42,6 +42,8 @@
        - Top stats numbers increased and centered
        - Random Stat of the Day is daily, full-width, and can show cover or chart
        - Fixed Random Stat effect ordering to avoid build error
+   - NEW (3.6.0):
+       - Random Stat of the Day includes a fun context line explaining the pick
 ===================================================================================== */
 
 "use client";
@@ -95,7 +97,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "3.5.0";
+const VERSION = "3.6.0";
 
 const COLORS = {
   bgSolid: "#0b1a1d",
@@ -480,6 +482,7 @@ type RandomStatResult = {
   title: string;
   primary: string; // big number / headline
   secondary?: string; // small explanation
+  extra?: string; // fun contextual line
   coverUrl?: string;
   gameTitle?: string;
   chart?: {
@@ -595,6 +598,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Hidden Gem Finder",
         primary: `+${top.delta.toFixed(1)} pts`,
         secondary: `${top.g.title} (you ${formatRatingLabel(top.my10)} vs IGDB ${top.igdb10.toFixed(1)})`,
+        extra: `Your score for ${top.g.title} is way above the crowd. Bold taste.`,
         coverUrl: top.g.coverUrl,
         gameTitle: top.g.title,
       });
@@ -621,6 +625,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Longest Time in Backlog",
         primary: `${top.days} days`,
         secondary: top.g.title,
+        extra: `That one took a while to finish—worth the wait?`,
         coverUrl: top.g.coverUrl,
         gameTitle: top.g.title,
       });
@@ -637,6 +642,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Bought… Never Played",
         primary: String(count),
         secondary: "Not completed and not currently Now Playing",
+        extra: "Your future self is cheering you on.",
       });
     }
   }
@@ -657,6 +663,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Comfort Zone Detected",
         primary: `${top.count} games`,
         secondary: `Top developer: ${top.label}`,
+        extra: "Looks like a studio you keep coming back to.",
       });
     }
   }
@@ -687,6 +694,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Peak Gaming Month",
         primary: String(top.count),
         secondary: formatMonthLabel(top.k),
+        extra: "That month was a completion spree.",
         chart: lastSix.length
           ? {
               type: "bar",
@@ -712,6 +720,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "High Standards",
         primary: fmtPct(high / rated.length),
         secondary: `${high} of ${rated.length} ratings are 8+`,
+        extra: "You don’t hand out high scores lightly.",
       });
     }
   }
@@ -736,6 +745,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Fastest Completion",
         primary: `${top.days} days`,
         secondary: top.g.title,
+        extra: "Speedrun energy.",
         coverUrl: top.g.coverUrl,
         gameTitle: top.g.title,
       });
@@ -756,6 +766,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Backlog Anxiety Index",
         primary: ratio.toFixed(2),
         secondary: `${queued + wish} backlog vs ${completed} completed`,
+        extra: "The pile grows... but so does the fun.",
       });
     }
   }
@@ -776,6 +787,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Most Ignored Genre",
         primary: `${bottom.count}`,
         secondary: bottom.label,
+        extra: "Maybe this is your next comfort‑break?",
       });
     }
   }
@@ -813,6 +825,7 @@ function buildRandomStatPool(base: Game[], dateKey: string): RandomStatResult[] 
         title: "Surprise Favorite",
         primary: formatRatingLabel(top.my10),
         secondary: `${top.g.title} (IGDB ${top.igdb10.toFixed(1)})`,
+        extra: `You loved it more than most—trust your instincts.`,
         coverUrl: top.g.coverUrl,
         gameTitle: top.g.title,
       });
@@ -955,6 +968,11 @@ function RandomStatCard({ stat }: { stat: RandomStatResult | null }) {
           </div>
           {stat.secondary ? (
             <div style={{ marginTop: 8, color: COLORS.muted, fontSize: 13, fontWeight: 700 }}>{stat.secondary}</div>
+          ) : null}
+          {stat.extra ? (
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: 700 }}>
+              {stat.extra}
+            </div>
           ) : null}
         </div>
 
