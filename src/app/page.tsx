@@ -91,7 +91,8 @@ type Game = {
 const VERSION = "3.0.0";
 
 const COLORS = {
-  bg: "#0b0b0f",
+  bgSolid: "#0b1a1d",
+  bgGradient: "linear-gradient(135deg, #0b1a1d 0%, #184247 45%, #0f1f28 100%)",
   panel: "#0f1117",
   panelTopFade: "rgba(255,255,255,0.03)",
   card: "#111827",
@@ -2360,7 +2361,7 @@ export default function HomePage() {
     </div>
   );
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, color: COLORS.text }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bgGradient, color: COLORS.text }}>
       <style>{`
         aside::-webkit-scrollbar { display: none; }
         body::-webkit-scrollbar { display: none; }
@@ -2384,7 +2385,7 @@ export default function HomePage() {
             top: 0;
             z-index: 30;
             padding: 12px 18px;
-            background: ${COLORS.bg};
+            background: ${COLORS.bgSolid};
             border-bottom: 1px solid ${COLORS.border};
             margin: -18px -18px 14px -18px;
           }
