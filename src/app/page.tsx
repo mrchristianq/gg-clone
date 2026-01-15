@@ -109,7 +109,7 @@ const COLORS = {
   modalBg: "rgba(0,0,0,0.62)",
   warn: "#f59e0b",
   danger: "#ef4444",
-  sidebarBg: "linear-gradient(180deg, #12383a 0%, #0f2a2f 45%, #111826 100%)",
+  sidebarBg: "linear-gradient(180deg, #0f2f33 0%, #0f2a2f 45%, #111826 100%)",
   sidebarBorder: "rgba(92, 238, 220, 0.16)",
 };
 
