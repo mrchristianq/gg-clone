@@ -1096,7 +1096,16 @@ function StatCard({
         {rightSlot ? <div style={{ flex: "0 0 auto" }}>{rightSlot}</div> : null}
       </div>
 
-      <div style={{ marginTop: 8, fontSize: 26, fontWeight: 950, color: COLORS.statNumber, lineHeight: 1 }}>
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 34,
+          fontWeight: 950,
+          color: COLORS.statNumber,
+          lineHeight: 1,
+          textAlign: "center",
+        }}
+      >
         {value}
       </div>
 
