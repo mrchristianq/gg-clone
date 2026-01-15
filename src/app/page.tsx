@@ -1131,7 +1131,7 @@ function TopRatedRow({
           style={{
             borderRadius: 999,
             padding: "6px 10px",
-            border: "1px solid rgba(0,0,0,0.45)",
+            border: "1.5px solid rgba(0,0,0,0.5)",
             background: "rgba(255,255,255,0.04)",
             color: COLORS.text,
             fontSize: 12,
