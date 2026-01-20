@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 3.6.2
+   Version: 3.6.3
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -97,7 +97,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "3.6.2";
+const VERSION = "3.6.3";
 
 const COLORS = {
   bgSolid: "#0b1a1d",
@@ -2402,7 +2402,6 @@ export default function HomePage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
 
-  const [editMode, setEditMode] = useState(false);
   const [syncState, setSyncState] = useState<"idle" | "saving" | "ok" | "error">("idle");
   const [syncMsg, setSyncMsg] = useState<string>("");
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
@@ -2631,7 +2630,7 @@ export default function HomePage() {
     return m;
   }, [filtered]);
 
-  const reorderAllowed = editMode && (activeTab === "queued" || activeTab === "wishlist");
+  const reorderAllowed = activeTab === "queued" || activeTab === "wishlist";
 
   const homeData = useMemo(() => {
     const base = filtered;
@@ -3199,25 +3198,6 @@ export default function HomePage() {
           </div>
 
           <div className="desktopOnly" style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {(activeTab === "queued" || activeTab === "wishlist") && (
-              <button
-                onClick={() => setEditMode((v) => !v)}
-                style={{
-                  border: `1px solid ${COLORS.border}`,
-                  background: editMode ? "rgba(34,197,94,0.16)" : COLORS.card,
-                  color: COLORS.text,
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  cursor: "pointer",
-                  fontWeight: 900,
-                  fontSize: 12,
-                }}
-                title="Toggle drag+drop ordering"
-              >
-                {editMode ? "Edit Mode: ON" : "Edit Mode: OFF"}
-              </button>
-            )}
-
             {topRightCountBubble}
           </div>
         </div>
