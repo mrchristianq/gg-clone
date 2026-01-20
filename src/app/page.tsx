@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 3.6.1
+   Version: 3.6.2
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -97,7 +97,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "3.6.1";
+const VERSION = "3.6.2";
 
 const COLORS = {
   bgSolid: "#0b1a1d",
@@ -173,7 +173,7 @@ function formatCountdown(s: string) {
   if (!t) return "TBA";
   const now = Date.now();
   const diffDays = Math.max(0, Math.ceil((t - now) / (1000 * 60 * 60 * 24)));
-  return `${diffDays} day${diffDays === 1 ? "" : "s"} until release`;
+  return `in ${diffDays} day${diffDays === 1 ? "" : "s"}`;
 }
 
 function formatDaysAgo(s: string) {
@@ -1598,7 +1598,22 @@ function HomeTile({
           ) : null}
         </div>
 
-        <div style={{ color: "white", fontSize: 12, fontWeight: 800, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{title}</div>
+        <div
+          style={{
+            color: "white",
+            fontSize: 12,
+            fontWeight: 800,
+            textShadow: "0 2px 10px rgba(0,0,0,.6)",
+            lineHeight: 1.2,
+            height: 30,
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitBoxOrient: "vertical",
+            WebkitLineClamp: 2,
+          }}
+        >
+          {title}
+        </div>
       </div>
     </button>
   );
