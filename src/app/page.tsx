@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 3.6.0
+   Version: 3.6.1
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -97,7 +97,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "3.6.0";
+const VERSION = "3.6.1";
 
 const COLORS = {
   bgSolid: "#0b1a1d",
@@ -173,17 +173,7 @@ function formatCountdown(s: string) {
   if (!t) return "TBA";
   const now = Date.now();
   const diffDays = Math.max(0, Math.ceil((t - now) / (1000 * 60 * 60 * 24)));
-  if (diffDays <= 7) return `in ${diffDays} day${diffDays === 1 ? "" : "s"}`;
-  if (diffDays <= 30) {
-    const weeks = Math.ceil(diffDays / 7);
-    return `in ${weeks} week${weeks === 1 ? "" : "s"}`;
-  }
-  if (diffDays < 365) {
-    const months = Math.ceil(diffDays / 30);
-    return `in ${months} month${months === 1 ? "" : "s"}`;
-  }
-  const years = Math.ceil(diffDays / 365);
-  return `in ${years} year${years === 1 ? "" : "s"}`;
+  return `${diffDays} day${diffDays === 1 ? "" : "s"} until release`;
 }
 
 function formatDaysAgo(s: string) {
@@ -1556,56 +1546,59 @@ function HomeTile({
       }}
       title={title}
     >
-      <div
-        style={{
-          position: "relative",
-          aspectRatio: "2 / 3",
-          background: COLORS.card,
-          borderRadius: 16,
-          overflow: "hidden",
-          boxShadow: "0 18px 40px rgba(0,0,0,.55)",
-        }}
-      >
-        {coverUrl ? (
-          <img
-            src={coverUrl}
-            alt={title}
-            loading="lazy"
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: COLORS.muted,
-              fontSize: 12,
-            }}
-          >
-            No cover
-          </div>
-        )}
-
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div
           style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            padding: "10px 10px 8px",
-            background: "linear-gradient(180deg, rgba(3,6,10,0) 0%, rgba(3,6,10,0.8) 70%)",
+            position: "relative",
+            aspectRatio: "2 / 3",
+            background: COLORS.card,
+            borderRadius: 16,
+            overflow: "hidden",
+            boxShadow: "0 18px 40px rgba(0,0,0,.55)",
           }}
         >
-          <div style={{ color: "white", fontSize: 12, fontWeight: 800, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>
-            {title}
-          </div>
-          {meta ? <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, marginTop: 2 }}>{meta}</div> : null}
+          {coverUrl ? (
+            <img
+              src={coverUrl}
+              alt={title}
+              loading="lazy"
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: COLORS.muted,
+                fontSize: 12,
+              }}
+            >
+              No cover
+            </div>
+          )}
+
+          {meta ? (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                padding: "10px 10px 8px",
+                background: "linear-gradient(180deg, rgba(3,6,10,0) 0%, rgba(3,6,10,0.8) 70%)",
+              }}
+            >
+              <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, fontWeight: 700 }}>{meta}</div>
+            </div>
+          ) : null}
         </div>
+
+        <div style={{ color: "white", fontSize: 12, fontWeight: 800, textShadow: "0 2px 10px rgba(0,0,0,.6)" }}>{title}</div>
       </div>
     </button>
   );
