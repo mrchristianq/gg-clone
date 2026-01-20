@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 3.6.3
+   Version: 3.6.4
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -97,7 +97,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "3.6.3";
+const VERSION = "3.6.4";
 
 const COLORS = {
   bgSolid: "#0b1a1d",
@@ -2489,7 +2489,6 @@ export default function HomePage() {
       setSortDir("desc");
     }
 
-    if (activeTab !== "queued" && activeTab !== "wishlist") setEditMode(false);
   }, [activeTab]);
 
   const platforms = useMemo(() => uniqueSorted(games.flatMap((g) => g.platform)), [games]);
