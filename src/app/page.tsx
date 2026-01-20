@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 3.6.4
+   Version: 3.6.5
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -97,7 +97,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "3.6.4";
+const VERSION = "3.6.5";
 
 const COLORS = {
   bgSolid: "#0b1a1d",
@@ -2677,14 +2677,7 @@ export default function HomePage() {
     }
   }
 
-  async function saveOrderToSheet(nextIds: string[]) {
-    const orderType = activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
-    if (!orderType) return;
-
-    const orderedIgdbIds = nextIds
-      .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
-      .filter(Boolean);
-
+  async function saveOrderToSheet(orderType: "queued" | "wishlist", orderedIgdbIds: string[]) {
     if (!orderedIgdbIds.length) throw new Error("No IGDB_ID values found to save order.");
 
     const res = await fetch("/sheets/update-order", {
@@ -2713,7 +2706,18 @@ export default function HomePage() {
 
     const next = arrayMove(dragIds, oldIndex, newIndex);
 
-    const orderType = activeTab === "queued" ? "queued" : "wishlist";
+    const orderType = activeTab === "queued" ? "queued" : activeTab === "wishlist" ? "wishlist" : "";
+    if (!orderType) return;
+
+    if (orderType === "queued" && sortBy !== "queuedOrder") {
+      setSortBy("queuedOrder");
+      setSortDir("asc");
+    }
+    if (orderType === "wishlist" && sortBy !== "wishlistOrder") {
+      setSortBy("wishlistOrder");
+      setSortDir("asc");
+    }
+
     const nextIgdbIds = next
       .map((id) => (id.startsWith("igdb:") ? id.slice("igdb:".length) : ""))
       .filter(Boolean);
@@ -2733,7 +2737,7 @@ export default function HomePage() {
     setSyncState("saving");
     setSyncMsg("Saving…");
     try {
-      await saveOrderToSheet(next);
+      await saveOrderToSheet(orderType, nextIgdbIds);
       setSyncState("ok");
       setSyncMsg("Saved");
       setLastSyncAt(Date.now());
