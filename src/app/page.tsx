@@ -50,6 +50,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
+import TiltCover from "@/components/TiltCover";
 import {
   DndContext,
   DragEndEvent,
@@ -967,24 +968,26 @@ function RandomStatCard({ stat }: { stat: RandomStatResult | null }) {
         </div>
 
         {hasCover ? (
-          <div
-            style={{
-              borderRadius: 14,
-              overflow: "hidden",
-              border: `1px solid ${COLORS.border}`,
-              background: COLORS.card,
-              aspectRatio: "2 / 3",
-              boxShadow: "0 18px 40px rgba(0,0,0,.45)",
-            }}
-            title={stat.gameTitle || stat.title}
-          >
-            <img
-              src={stat.coverUrl}
-              alt={stat.gameTitle || "Game cover"}
-              loading="lazy"
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            />
-          </div>
+          <TiltCover>
+            <div
+              style={{
+                borderRadius: 14,
+                overflow: "hidden",
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.card,
+                aspectRatio: "2 / 3",
+                boxShadow: "0 18px 40px rgba(0,0,0,.45)",
+              }}
+              title={stat.gameTitle || stat.title}
+            >
+              <img
+                src={stat.coverUrl}
+                alt={stat.gameTitle || "Game cover"}
+                loading="lazy"
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            </div>
+          </TiltCover>
         ) : hasChart ? (
           <div
             style={{
@@ -1453,68 +1456,70 @@ function SortableTile({
         {...attributes}
         {...listeners}
       >
-        <div
-          style={{
-            position: "relative",
-            aspectRatio: "2 / 3",
-            background: COLORS.card,
-            borderRadius: 14,
-            overflow: "hidden",
-            boxShadow: "0 20px 40px rgba(0,0,0,.6)",
-          }}
-        >
-          {coverUrl ? (
-            <img
-              src={coverUrl}
-              alt={title}
-              loading="lazy"
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: COLORS.muted,
-                fontSize: 12,
-              }}
-            >
-              No cover
-            </div>
-          )}
+        <TiltCover>
+          <div
+            style={{
+              position: "relative",
+              aspectRatio: "2 / 3",
+              background: COLORS.card,
+              borderRadius: 14,
+              overflow: "hidden",
+              boxShadow: "0 20px 40px rgba(0,0,0,.6)",
+            }}
+          >
+            {coverUrl ? (
+              <img
+                src={coverUrl}
+                alt={title}
+                loading="lazy"
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: COLORS.muted,
+                  fontSize: 12,
+                }}
+              >
+                No cover
+              </div>
+            )}
 
-          {overlayRating != null ? (
-            <div
-              style={{
-                position: "absolute",
-                top: 6,
-                right: 6,
-                padding: "3px 6px",
-                borderRadius: 10,
-                background: "rgba(5,10,18,0.55)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                backdropFilter: "blur(8px)",
-                WebkitBackdropFilter: "blur(8px)",
-                color: "rgba(255,255,255,0.92)",
-                fontSize: 11,
-                fontWeight: 950,
-                letterSpacing: "0.02em",
-                lineHeight: 1,
-                boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
-                pointerEvents: "none",
-              }}
-              aria-label={`My rating ${formatRatingLabel(overlayRating)}`}
-              title={`My rating ${formatRatingLabel(overlayRating)}`}
-            >
-              {formatRatingLabel(overlayRating)}
-            </div>
-          ) : null}
-        </div>
+            {overlayRating != null ? (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 6,
+                  right: 6,
+                  padding: "3px 6px",
+                  borderRadius: 10,
+                  background: "rgba(5,10,18,0.55)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  backdropFilter: "blur(8px)",
+                  WebkitBackdropFilter: "blur(8px)",
+                  color: "rgba(255,255,255,0.92)",
+                  fontSize: 11,
+                  fontWeight: 950,
+                  letterSpacing: "0.02em",
+                  lineHeight: 1,
+                  boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+                  pointerEvents: "none",
+                }}
+                aria-label={`My rating ${formatRatingLabel(overlayRating)}`}
+                title={`My rating ${formatRatingLabel(overlayRating)}`}
+              >
+                {formatRatingLabel(overlayRating)}
+              </div>
+            ) : null}
+          </div>
+        </TiltCover>
       </button>
     </div>
   );
@@ -1547,56 +1552,58 @@ function HomeTile({
       title={title}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div
-          style={{
-            position: "relative",
-            aspectRatio: "2 / 3",
-            background: COLORS.card,
-            borderRadius: 16,
-            overflow: "hidden",
-            boxShadow: "0 18px 40px rgba(0,0,0,.55)",
-          }}
-        >
-          {coverUrl ? (
-            <img
-              src={coverUrl}
-              alt={title}
-              loading="lazy"
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: COLORS.muted,
-                fontSize: 12,
-              }}
-            >
-              No cover
-            </div>
-          )}
+        <TiltCover>
+          <div
+            style={{
+              position: "relative",
+              aspectRatio: "2 / 3",
+              background: COLORS.card,
+              borderRadius: 16,
+              overflow: "hidden",
+              boxShadow: "0 18px 40px rgba(0,0,0,.55)",
+            }}
+          >
+            {coverUrl ? (
+              <img
+                src={coverUrl}
+                alt={title}
+                loading="lazy"
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: COLORS.muted,
+                  fontSize: 12,
+                }}
+              >
+                No cover
+              </div>
+            )}
 
-          {meta ? (
-            <div
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: 0,
-                padding: "10px 10px 8px",
-                background: "linear-gradient(180deg, rgba(3,6,10,0) 0%, rgba(3,6,10,0.8) 70%)",
-              }}
-            >
-              <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, fontWeight: 700 }}>{meta}</div>
-            </div>
-          ) : null}
-        </div>
+            {meta ? (
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  padding: "10px 10px 8px",
+                  background: "linear-gradient(180deg, rgba(3,6,10,0) 0%, rgba(3,6,10,0.8) 70%)",
+                }}
+              >
+                <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, fontWeight: 700 }}>{meta}</div>
+              </div>
+            ) : null}
+          </div>
+        </TiltCover>
 
         <div
           style={{
@@ -1738,54 +1745,63 @@ function TopRatedRow({
                 style={{
                   flex: "1 1 0",
                   minWidth: 0,
-                  border: `1px solid ${COLORS.border}`,
-                  background: COLORS.card,
-                  borderRadius: 14,
-                  overflow: "hidden",
                   padding: 0,
                   cursor: "pointer",
-                  boxShadow: "0 18px 45px rgba(0,0,0,.45)",
-                  aspectRatio: "2 / 3",
-                  position: "relative",
+                  border: "none",
+                  background: "transparent",
                 }}
               >
-                {g.coverUrl ? (
-                  <img
-                    src={g.coverUrl}
-                    alt={g.title}
-                    loading="lazy"
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                  />
-                ) : (
-                  <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
-                    No cover
-                  </div>
-                )}
-
-                {g.overlayRating != null ? (
+                <TiltCover>
                   <div
                     style={{
-                      position: "absolute",
-                      top: 6,
-                      right: 6,
-                      padding: "3px 6px",
-                      borderRadius: 10,
-                      background: "rgba(5,10,18,0.55)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      backdropFilter: "blur(8px)",
-                      WebkitBackdropFilter: "blur(8px)",
-                      color: "rgba(255,255,255,0.92)",
-                      fontSize: 11,
-                      fontWeight: 950,
-                      letterSpacing: "0.02em",
-                      lineHeight: 1,
-                      boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
-                      pointerEvents: "none",
+                      border: `1px solid ${COLORS.border}`,
+                      background: COLORS.card,
+                      borderRadius: 14,
+                      overflow: "hidden",
+                      boxShadow: "0 18px 45px rgba(0,0,0,.45)",
+                      aspectRatio: "2 / 3",
+                      position: "relative",
                     }}
                   >
-                    {formatRatingLabel(g.overlayRating)}
+                    {g.coverUrl ? (
+                      <img
+                        src={g.coverUrl}
+                        alt={g.title}
+                        loading="lazy"
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
+                    ) : (
+                      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+                        No cover
+                      </div>
+                    )}
+
+                    {g.overlayRating != null ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 6,
+                          right: 6,
+                          padding: "3px 6px",
+                          borderRadius: 10,
+                          background: "rgba(5,10,18,0.55)",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          backdropFilter: "blur(8px)",
+                          WebkitBackdropFilter: "blur(8px)",
+                          color: "rgba(255,255,255,0.92)",
+                          fontSize: 11,
+                          fontWeight: 950,
+                          letterSpacing: "0.02em",
+                          lineHeight: 1,
+                          boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        {formatRatingLabel(g.overlayRating)}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                </TiltCover>
               </button>
             ))}
           </div>
@@ -1800,54 +1816,63 @@ function TopRatedRow({
                   style={{
                     flex: "1 1 0",
                     minWidth: 0,
-                    border: `1px solid ${COLORS.border}`,
-                    background: COLORS.card,
-                    borderRadius: 14,
-                    overflow: "hidden",
                     padding: 0,
                     cursor: "pointer",
-                    boxShadow: "0 18px 45px rgba(0,0,0,.45)",
-                    aspectRatio: "2 / 3",
-                    position: "relative",
+                    border: "none",
+                    background: "transparent",
                   }}
                 >
-                  {g.coverUrl ? (
-                    <img
-                      src={g.coverUrl}
-                      alt={g.title}
-                      loading="lazy"
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                    />
-                  ) : (
-                    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
-                      No cover
-                    </div>
-                  )}
-
-                  {g.overlayRating != null ? (
+                  <TiltCover>
                     <div
                       style={{
-                        position: "absolute",
-                        top: 6,
-                        right: 6,
-                        padding: "3px 6px",
-                        borderRadius: 10,
-                        background: "rgba(5,10,18,0.55)",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        backdropFilter: "blur(8px)",
-                        WebkitBackdropFilter: "blur(8px)",
-                        color: "rgba(255,255,255,0.92)",
-                        fontSize: 11,
-                        fontWeight: 950,
-                        letterSpacing: "0.02em",
-                        lineHeight: 1,
-                        boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
-                        pointerEvents: "none",
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.card,
+                        borderRadius: 14,
+                        overflow: "hidden",
+                        boxShadow: "0 18px 45px rgba(0,0,0,.45)",
+                        aspectRatio: "2 / 3",
+                        position: "relative",
                       }}
                     >
-                      {formatRatingLabel(g.overlayRating)}
+                      {g.coverUrl ? (
+                        <img
+                          src={g.coverUrl}
+                          alt={g.title}
+                          loading="lazy"
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
+                      ) : (
+                        <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted, fontSize: 12 }}>
+                          No cover
+                        </div>
+                      )}
+
+                      {g.overlayRating != null ? (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 6,
+                            right: 6,
+                            padding: "3px 6px",
+                            borderRadius: 10,
+                            background: "rgba(5,10,18,0.55)",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            backdropFilter: "blur(8px)",
+                            WebkitBackdropFilter: "blur(8px)",
+                            color: "rgba(255,255,255,0.92)",
+                            fontSize: 11,
+                            fontWeight: 950,
+                            letterSpacing: "0.02em",
+                            lineHeight: 1,
+                            boxShadow: "0 10px 22px rgba(0,0,0,0.35)",
+                            pointerEvents: "none",
+                          }}
+                        >
+                          {formatRatingLabel(g.overlayRating)}
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
+                  </TiltCover>
                 </button>
               ))}
             </div>
@@ -2294,46 +2319,48 @@ function NewestReleaseCard({
 
       {game ? (
         <div style={{ marginTop: 12, display: "flex", gap: 12, alignItems: "center" }}>
-          <div
-            style={{
-              width: 56,
-              height: 84,
-              borderRadius: 12,
-              overflow: "hidden",
-              background: COLORS.card,
-              border: `1px solid ${COLORS.border}`,
-              flex: "0 0 auto",
-              boxShadow: "0 18px 45px rgba(0,0,0,.45)",
-            }}
-          >
-            {game.coverUrl ? (
-              <img
-                src={game.coverUrl}
-                alt={game.title}
-                loading="lazy"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  display: "block",
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: COLORS.muted,
-                  fontSize: 11,
-                }}
-              >
-                —
-              </div>
-            )}
-          </div>
+          <TiltCover>
+            <div
+              style={{
+                width: 56,
+                height: 84,
+                borderRadius: 12,
+                overflow: "hidden",
+                background: COLORS.card,
+                border: `1px solid ${COLORS.border}`,
+                flex: "0 0 auto",
+                boxShadow: "0 18px 45px rgba(0,0,0,.45)",
+              }}
+            >
+              {game.coverUrl ? (
+                <img
+                  src={game.coverUrl}
+                  alt={game.title}
+                  loading="lazy"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: COLORS.muted,
+                    fontSize: 11,
+                  }}
+                >
+                  —
+                </div>
+              )}
+            </div>
+          </TiltCover>
 
           <div style={{ minWidth: 0 }}>
             <div
@@ -3456,28 +3483,30 @@ export default function HomePage() {
 
             <div className="modalStack" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
               <div style={{ width: 260, flex: "0 0 auto" }}>
-                <div
-                  style={{
-                    borderRadius: 16,
-                    overflow: "hidden",
-                    border: `1px solid ${COLORS.border}`,
-                    background: COLORS.card,
-                    aspectRatio: "2 / 3",
-                    boxShadow: "0 18px 50px rgba(0,0,0,.55)",
-                  }}
-                >
-                  {selectedGame.coverUrl ? (
-                    <img
-                      src={selectedGame.coverUrl}
-                      alt={selectedGame.title}
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                    />
-                  ) : (
-                    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
-                      No cover
-                    </div>
-                  )}
-                </div>
+                <TiltCover>
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      overflow: "hidden",
+                      border: `1px solid ${COLORS.border}`,
+                      background: COLORS.card,
+                      aspectRatio: "2 / 3",
+                      boxShadow: "0 18px 50px rgba(0,0,0,.55)",
+                    }}
+                  >
+                    {selectedGame.coverUrl ? (
+                      <img
+                        src={selectedGame.coverUrl}
+                        alt={selectedGame.title}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
+                    ) : (
+                      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.muted }}>
+                        No cover
+                      </div>
+                    )}
+                  </div>
+                </TiltCover>
 
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 8 }}>{selectedGame.title}</div>
