@@ -2980,8 +2980,8 @@ export default function HomePage() {
     : { display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4 };
 
   const homeMaxItems = isMobile ? 4 : 5;
-  const homeCoverSize = isMobile ? "100%" : 150;
-  const homeCoverSizeTight = isMobile ? "100%" : 140;
+  const homeCoverSize = isMobile ? "100%" : 130;
+  const homeCoverSizeTight = isMobile ? "100%" : 120;
 
   const mobileTabs = (
     <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
