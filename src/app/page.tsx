@@ -98,7 +98,7 @@ type Game = {
   wishlistOrder: string;
 };
 
-const VERSION = "3.6.5";
+const VERSION = "4.0.0";
 
 const COLORS = {
   bgSolid: "#0b1a1d",

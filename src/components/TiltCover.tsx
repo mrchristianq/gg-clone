@@ -24,6 +24,37 @@ export default function TiltCover({ children, className }: TiltCoverProps) {
     setIsTouch("ontouchstart" in window || navigator.maxTouchPoints > 0);
   }, []);
 
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof window === "undefined") return;
+
+    const findContentEl = () => {
+      const children = Array.from(el.children);
+      return children.find((child) => !child.classList.contains(styles.tiltReflection)) as HTMLElement | undefined;
+    };
+
+    const updateRadius = () => {
+      const contentEl = findContentEl();
+      if (!contentEl) return;
+      const radius = window.getComputedStyle(contentEl).borderRadius || "0px";
+      el.style.setProperty("--tiltRadius", radius);
+    };
+
+    updateRadius();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const contentEl = findContentEl();
+      if (!contentEl) return;
+      const ro = new ResizeObserver(() => updateRadius());
+      ro.observe(contentEl);
+      return () => ro.disconnect();
+    }
+
+    const onResize = () => updateRadius();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (isTouch) return;
     const el = ref.current;
