@@ -2660,11 +2660,16 @@ export default function HomePage() {
       })
       .sort((a, b) => toDateNum(b.releaseDate) - toDateNum(a.releaseDate));
 
+    const recentlyAdded = base
+      .filter((g) => toDateNum(g.dateAdded))
+      .sort((a, b) => toDateNum(b.dateAdded) - toDateNum(a.dateAdded));
+
     return {
       nowPlaying,
       recentlyCompleted,
       upcomingWishlist,
       recentlyReleased,
+      recentlyAdded,
     };
   }, [filtered]);
 
@@ -3278,6 +3283,24 @@ export default function HomePage() {
                   ))
                 ) : (
                   <div style={{ color: COLORS.muted, fontSize: 12 }}>No recent releases.</div>
+                )}
+              </div>
+            </HomeSection>
+
+            <HomeSection title="Recently Added">
+              <div style={homeRowStyle}>
+                {homeData.recentlyAdded.length ? (
+                  homeData.recentlyAdded.slice(0, homeMaxItems).map((g, i) => (
+                    <HomeTile
+                      key={`${g.title}-${i}`}
+                      title={g.title}
+                      coverUrl={g.coverUrl}
+                      size={homeCoverSizeTight}
+                      onClick={() => setSelectedGame(g)}
+                    />
+                  ))
+                ) : (
+                  <div style={{ color: COLORS.muted, fontSize: 12 }}>No recent additions.</div>
                 )}
               </div>
             </HomeSection>
