@@ -1,6 +1,6 @@
 /* =====================================================================================
    Chris' Game Library
-   Version: 3.6.5
+   Version: 4.0.0
    Notes:
    - Rating bubble ONLY shows on:
        1) Completed tab tiles
@@ -44,6 +44,10 @@
        - Fixed Random Stat effect ordering to avoid build error
    - NEW (3.6.0):
        - Random Stat of the Day includes a fun context line explaining the pick
+   - NEW (4.0.0):
+       - Added TiltCover 3D tilt + reflection on all cover tiles
+       - Reflection now clips to rounded corners
+       - Home tab: added Recently Added section (latest DateAdded)
 ===================================================================================== */
 
 "use client";
