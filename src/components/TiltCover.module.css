@@ -1,0 +1,39 @@
+.tiltCard {
+  position: relative;
+  transform: perspective(900px) rotateY(var(--tiltY, 0deg)) rotateX(var(--tiltX, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 60ms ease, filter 120ms ease;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.22));
+}
+
+.tiltCard:hover {
+  filter: drop-shadow(0 12px 16px rgba(0, 0, 0, 0.28));
+}
+
+.tiltReflection {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  mix-blend-mode: screen;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.0) 45%,
+    rgba(255, 255, 255, 0.18) 70%,
+    rgba(255, 255, 255, 0.0) 100%
+  );
+  transform: translate3d(-10%, -10%, 0);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tiltCard:hover .tiltReflection {
+  opacity: 0.85;
+  transform: translate3d(0, 0, 0);
+}
+
+.tiltCard > :not(.tiltReflection) {
+  position: relative;
+  z-index: 1;
+}
