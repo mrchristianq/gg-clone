@@ -2396,7 +2396,9 @@ function NewestReleaseCard({
 // ---- paste the next chunk you have after this line (it should be: `export default function HomePage() {`)
 // and I’ll continue from there cleanly.
 export default function HomePage() {
-  const csvUrl = process.env.NEXT_PUBLIC_SHEET_CSV_URL;
+  const csvUrl =
+    process.env.NEXT_PUBLIC_SHEET_CSV_URL ||
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTVR45pmxta9I3wSApzI4ZZtEBrJSmiNTE4ED5yMAN4iKmgrCFg_EDueKyD6T5yHN46DPFZqRvOPxoy/pub?gid=1374715809&single=true&output=csv";
 
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
